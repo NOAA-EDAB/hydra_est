@@ -141,10 +141,8 @@ DATA_SECTION
     //that is required for the simulation model
     if((on=option_match(ad_comm::argc,ad_comm::argv,"-sim",opt))>-1)
     {
-    //  cout<<"in if statement \n";
       sim=1;
-         rseed=atoi(ad_comm::argv[on+1]);
-    //if(SimFlag)exit(1);
+      rseed=atoi(ad_comm::argv[on+1]);
     }
  END_CALCS
 
@@ -214,14 +212,14 @@ DATA_SECTION
   !!	}
   !!	binavgwt = (wtbinmin + wtbinmax)/2.0;
 
-
 //read in covariate information from .dat file
   init_int Nrecruitment_cov  									//number of recruitment covariates
   init_int Nmaturity_cov  										//number of maturity covariates
   init_int Ngrowth_cov  										//number of growth covariates
   init_matrix recruitment_cov(1,Nrecruitment_cov,1,Nyrs)		//time series of recruitment covariates
   init_matrix maturity_cov(1,Nmaturity_cov,1,Nyrs)				//time series of maturity covariates
-  init_matrix growth_cov(1,Ngrowth_cov,1,Nyrs)					//time series of growth covariates
+  init_matrix growth_cov(1,Ngrowth_cov,1,Nyrs)
+   //time series of growth covariates
   //init_3darray recruitment_cov(1,Nareas,1,Nrecruitment_cov,1,Nyrs)  //time series of recruitment covariates, area specific
   //init_3darray maturity_cov(1,Nareas,1,Nmaturity_cov,1,Nyrs)  //time series of maturity covariates, area specific
   //init_3darray growth_cov(1,Nareas,1,Ngrowth_cov,1,Nyrs)   	//time series of growth covariates, area specific
@@ -260,6 +258,7 @@ DATA_SECTION
 //to estimate any of them within the model, place in parameter section, initialize from .pin file
 //recruitment parameters from .dat file
   init_matrix recGamma_alpha(1,Nareas,1,Nspecies)			//eggprod gamma Ricker model alpha
+
   init_matrix recGamma_shape(1,Nareas,1,Nspecies)			//eggprod gamma Ricker model shape parameter
   init_matrix recGamma_beta(1,Nareas,1,Nspecies)			//eggprod gamma Ricker model beta
 
@@ -282,7 +281,10 @@ DATA_SECTION
   init_matrix recShepherd_alpha(1,Nareas,1,Nspecies)			//SSB Shepherd model alpha
   init_matrix recShepherd_shape(1,Nareas,1,Nspecies)			//SSB Shepherd model shape parameter=1.0 not used
   init_matrix recShepherd_beta(1,Nareas,1,Nspecies)			//SSB Shepherd model beta
-
+// !! cout << recShepherd_alpha<<endl;
+// !! cout << recShepherd_beta<<endl;
+ // !! cout << recShepherd_shape<<endl;
+//  !! exit(0);
 
   init_ivector rectype(1,Nspecies)  //switch for alternate recruitment functions
 
@@ -368,20 +370,33 @@ DATA_SECTION
   init_matrix vonB_Linf(1,Nareas,1,Nspecies)    //alternate parameterization, vonB growth
   init_matrix vonB_k(1,Nareas,1,Nspecies)       //alternate parameterization, vonB growth
   init_ivector growthtype(1,Nspecies)                          //switch for alternate growth types
+ 
+
   init_number phimax
   4darray growthprob_phi(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)
+  vector delta_t(1,Nsizebins)
   !!  for (area=1; area<=Nareas; area++){
   !!	for(spp=1; spp<=Nspecies; spp++){
   !!     for(yr=1; yr<=Nyrs; yr++){
   !!      switch (growthtype (spp)){
   !!        case 1:	  	 //exponential no covariates
-  !!    	  growthprob_phi(area, spp, yr) = 1/pow((lbinmax(spp)/growth_psi(area, spp)),
-  !!													(1.0/growth_kappa(area, spp)));
+  !!              // these yimes  of growing out of bin relative to size zero. SGaichas
+  !!    	  delta_t = pow((lbinmax(spp)/growth_psi(area, spp)),(1.0/growth_kappa(area, spp)));
+  !!              // these are "probabilities" of growing into size bin, r given in size bin r-1. ABeet
+  !!              growthprob_phi(area, spp, yr,1) = 1/delta_t(1);
+  !!              for (int isize=2;isize<=Nsizebins; isize++) {
+  !!                growthprob_phi(area, spp, yr, isize) = 1/(delta_t(isize) - delta_t(isize-1));
+  !!              }
   !!        break;
   !!        case 2:       //exponential with covariates
-  !!    	  growthprob_phi(area, spp, yr) = 1/pow((lbinmax(spp)/
-  !!                                     growth_psi(area, spp)* mfexp(growth_covwt(spp)*trans(growth_cov)(yr))),
-  !!													(1.0/growth_kappa(area, spp)));
+  !!              // these "probabilitlies of growing out of bin relative to size zero. SGaichas
+  !!    	  delta_t = pow((lbinmax(spp)/growth_psi(area, spp)* mfexp(growth_covwt(spp)*trans(growth_cov)(yr))),
+  !!	        										(1.0/growth_kappa(area, spp)));
+  !!              // these are "probabilities" of growing into size bin, r given in size bin r-1. ABeet
+  !!              growthprob_phi(area, spp, yr,1) = 1/delta_t(1);
+  !!              for (int isize=2;isize<=Nsizebins; isize++) {
+  !!                growthprob_phi(area, spp, yr, isize) = 1/(delta_t(isize) - delta_t(isize-1));
+  !!              }                                                                                 
   !!        break;
   !!        case 3:       //VonB no covariates
   !!          growthprob_phi(area, spp, yr) = vonB_k(area, spp)/log(
@@ -404,6 +419,7 @@ DATA_SECTION
   !!	}
   !!    growthprob_phi(area) /= phimax;  //rescale so no group has >1 prob growing out
   !!  }
+
   !!//  growthprob_phi /= phimax;   //rescale so no group has >1 prob growing out--not working on 4d array
   !!  Nstepsyr = round(phimax);            //set model timestep to phimax
   !!  Tottimesteps = Nstepsyr*Nyrs;        //for scaling state variable arrays
@@ -428,6 +444,7 @@ DATA_SECTION
   init_3darray M1(1,Nareas,1,Nspecies,1,Nsizebins)
   init_3darray isprey(1,Nareas,1,Nspecies,1,Nspecies)    //preds in columns, prey in rows
   init_matrix preferred_wtratio(1,Nareas,1,Nspecies)     //pred specific, not size
+
   init_vector sd_sizepref(1,Nspecies)              //pred specific, not size
   4darray wtratio(1,Nareas,1,Nspecies,1,Totsizebins,1,Nsizebins)  //2nd dim pred spp, 3rd all spp as prey lengths, 4th pred lengths
   !!  for (area=1; area<=Nareas; area++){
@@ -477,10 +494,14 @@ DATA_SECTION
 
   // Added by andyBeet
   init_matrix B0(1,Nareas,1,Nspecies) // Equilibrium biomass. Obtained from a baseline run with zero fishing effort and no Errors added(recruitment, survey, catch)
+  imatrix catchToDiscardsGuild(1,Nareas,1,Nguilds) // binary vector indicating which guilds have dropped below the most severe threshold
+  imatrix catchToDiscardsSpecies(1,Nareas,1,Nspecies) // binary vector indicating which species have dropped below the most severe threshold
+
   init_int Nguilds // number of guilds
   imatrix maxGuildThreshold(1,Nareas,1,Nguilds) // most severe exceedence for each guild
   imatrix maxSpeciesThreshold(1,Nareas,1,Nspecies) // most severe exceedence for each species. currently a binary response
-  init_vector guildMembers(1,Nspecies) // assign each species to a guild. 1,2,3 etc.
+  init_ivector guildMembers(1,Nspecies) // assign each species to a guild. 1,2,3 etc.
+
   init_int AssessmentPeriod // time (yrs) when we assess guildlevel biomass levels
 
   matrix B0_guilds(1,Nareas,1,Nguilds) // equilibrium biomass for guild.
@@ -498,6 +519,7 @@ DATA_SECTION
   !! }
 
   init_int Nthresholds // number of thresholds used for corrective fishing rules
+
   init_vector threshold_proportion(1,Nthresholds) //levels at which action is taken
   init_vector exploitation_levels(1,Nthresholds) //levels to drop exploitation to if threshold is exceeded
   init_vector threshold_species(1,Nspecies) // individual species thresholds (fraction)
@@ -512,7 +534,11 @@ DATA_SECTION
   init_4darray discard_Coef(1,Nareas,1,Nspecies,1,Nfleets,1,Nsizebins) // proportion of fleet catch that are discarded
   init_4darray discardSurvival_Coef(1,Nareas,1,Nspecies,1,Nfleets,1,Nsizebins) // of the discards what proportion survives
 
-//flag marking end of file for data input
+  init_vector predOrPrey(1,Nspecies) // binary vector indicating which species are considered predators. used in pred:prey indices
+  init_int bandwidth_metric // moving window for catch variance
+  number baseline_threshold // value of threshold that we stop landing catch. Typically 0.2
+  !!  baseline_threshold = 0.2;
+ //flag marking end of file for data input
   init_int eof;
 
 //debugging section, check inputs and initial calculations
@@ -604,11 +630,13 @@ INITIALIZATION_SECTION
 PARAMETER_SECTION
 //=======================================================================================
   matrix effort_updated(1,Nareas,1,Nfleets)     // calculated new Effort for each fleet following threshold exceedence calc_assessment_strategy
-
+  3darray obs_effortAssess(1,Nareas,1,Nfleets,1,Nyrs)  	//standardized effort units needed
+  !!obs_effortAssess = obs_effort;
   //Initial N year 1
   init_3darray yr1N(1,Nareas,1,Nspecies,1,Nsizebins,yr1Nphase)       //initial year N at size, millions
 
-  //recruitment parameters (alts in .dat file read in with switch for rec form by spp)
+ // recruitment parameters all read in from Dat file. These are redundant. Andy Beet
+ //recruitment parameters (alts in .dat file read in with switch for rec form by spp)
   init_matrix recruitment_alpha(1,Nareas,1,Nspecies,recphase)			//recruitment model alpha
   init_matrix recruitment_shape(1,Nareas,1,Nspecies,recphase)			//recruitment model shape parameter
   init_matrix recruitment_beta(1,Nareas,1,Nspecies,recphase)			//recruitment model beta
@@ -622,10 +650,12 @@ PARAMETER_SECTION
   //recruitment: average annual, annual devs, actual (avg+dev)
   init_matrix avg_recruitment(1,Nareas,1,Nspecies,avg_rec_phase)  //average annual recruitment by area, species
   init_3darray recruitment_devs(1,Nareas,1,Nspecies,1,Nyrs,dev_rec_phase)  //recruitment deviations by area, species
+
   3darray recruitment(1,Nareas,1,Nspecies,1,Nyrs)  //by definition into first size bin for each species, millions
 
   //recruitment simulation
   init_matrix recsigma(1,Nareas,1,Nspecies)    //sigma for stochastic recruitment from SR curve
+
   3darray rec_procError(1,Nareas,1,Nspecies,1,Nyrs)   //to generate deviations from SR curve
 
   //growth options
@@ -716,6 +746,16 @@ PARAMETER_SECTION
   3darray eaten_biomass(1,Nareas,1,Nspecies,1,Nyrs)  //uses B units. M2
   3darray discard_biomass(1,Nareas,1,Nspecies,1,Nyrs)  //uses B units. discards
   3darray otherDead_biomass(1,Nareas,1,Nspecies,1,Nyrs)  //uses B units. M1
+  3darray total_biomass(1,Nareas,1,Nspecies,1,Nyrs)  //uses B units. N
+  4darray eaten_biomass_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)  //uses B units. M2
+  4darray discard_biomass_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)  //uses B units. discards
+  4darray otherDead_biomass_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)  //uses B units. M1
+  4darray total_biomass_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)  //uses B units. N
+  4darray catch_biomass_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)  //uses B units--"true" simulated catch
+  3darray predation_mortality(1,Nareas,1,Nspecies,1,Nyrs) // uses B units = eaten/total biomass
+  3darray fishing_mortality(1,Nareas,1,Nspecies,1,Nyrs) // uses B units  = (landing+discards) / total biomass
+  4darray predation_mortality_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) // uses B units = eaten/total biomass
+  4darray fishing_mortality_size(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) // uses B units  = (landing+discards) / total biomass
 
   //estimated fishery catch and survey catch
   3darray catch_biomass(1,Nareas,1,Nspecies,1,Nyrs)  //uses B units--"true" simulated catch
@@ -741,18 +781,33 @@ PARAMETER_SECTION
   //matrix agelencomp_fit(1,Nareas,1,Nspecies) //fit to age at length composition, where available
 
 // calc_health_indices variables AndyBeet
-  matrix index_Simpsons(1,Nareas,1,Nyrs); // index values
+  matrix index_Simpsons_N(1,Nareas,1,Nyrs); // simpsons_N. index values
+  matrix index_Simpsons_Nrecip(1,Nareas,1,Nyrs); //1/simpsons for N. index values
+  matrix index_Simpsons_C(1,Nareas,1,Nyrs); // simpsons for catch. index values
+  matrix index_Simpsons_Crecip(1,Nareas,1,Nyrs); // 1/simpsons for catch. index values
   3darray index_LFI_Biomass(1,Nareas,1,Nspecies,1,Nyrs) // large fish defined as # in top size class. For each species
   3darray index_LFI_Catch(1,Nareas,1,Nspecies,1,Nyrs) // large fish defined as # in top size class. For each species
   3darray index_LFI_N(1,Nareas,1,Nspecies,1,Nyrs) // large fish index defines as number of fish in largest size class
   matrix LFI_threshold(1,Nareas,1,Tottimesteps) // large fish index. large fish defined as exceeding x cm (parameter read in)
-  vector prob_species(1,Nspecies); //function of N
-  number LF_Biomass;
-  vector B_total(1,Nspecies); // total B by species at each time t
-  vector B_largestClass(1,Nspecies); // biomass of largest size class
-  4darray N_tot(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins); // acumulative N over the year
-  4darray B_tot(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins); // total B over year
-  4darray C_tot(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins); // total C over year
+  vector prob_species(1,Nspecies) //function of N
+  number LF_Biomass
+  vector B_total(1,Nspecies) // total B by species at each time t
+  vector B_largestClass(1,Nspecies) // biomass of largest size class
+  4darray N_tot(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) // acumulative N over the year
+  4darray B_tot(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) // total B over year
+  4darray C_tot(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) // total C over year
+  5darray Cfl_tot(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs,1,Nsizebins) // total C by fleet over year
+  matrix index_predBio(1,Nareas,1,Nyrs) // annual predator biomass. used in health indices module
+  matrix index_preyBio(1,Nareas,1,Nyrs) // annual prey biomass. used in health indices module
+  matrix index_predToPreyRatio(1,Nareas,1,Nyrs) // annual predator:prey ratio in terms of biomass. used in health indices module
+  matrix index_plankToPiscRatio(1,Nareas,1,Nyrs) // annual predator:prey ratio in terms of biomass. used in health indices module
+  vector index_catch(1,bandwidth_metric) // temp vector used in indices module. stores catch
+  vector index_biomass(1,bandwidth_metric) // temp vector used in indices module. stores catch
+  3darray index_stdev_catch(1,Nareas,1,Nspecies,1,Nyrs) /// std of catch uing a window of size = bandwidth_metric
+  3darray index_stdev_biomass(1,Nareas,1,Nspecies,1,Nyrs) // std of biomass using window of size = bandwidth_metric
+  3darray index_ExploitationRate(1,Nareas,1,Nspecies,1,Nyrs) // species exploitation rate
+  matrix index_SystemExploitationRate(1,Nareas,1,Nyrs) // system exploitation rate
+  matrix  exploitation_update(1,Nareas,1,Nyrs) // changing exploitation rate
 
   matrix objfun_areaspp(1,Nareas,1,Nspecies) //sum over components for area and species
 
@@ -801,33 +856,43 @@ PROCEDURE_SECTION
 		//if (debug == 3) {cout<<yrct<<" "<<t<<endl;}
                 // abeet
                 if (t % Nstepsyr == 1) {yrct++;} // first time step in new year = > increment year
-
+ 
                 calc_update_N(); // N(t) = N(t-1)
-
+ 
                   // add recruits at start of year.  update N to add recruits to bin 1
                 calc_recruitment(); if (debug == 4) {cout<<"completed Recruitment"<<endl;}
 
                 calc_pred_mortality(); if (debug == 4) {cout<<"completed Predation Mortality"<<endl;}
-
+  
                 calc_fishing_mortality(); if (debug == 4) {cout<<"completed Fishing Mortality"<<endl;}
-
+  
                 calc_total_mortality(); // We calculate Z(t) = M1 + M2 + F
-
+ 
 		calc_catch_etc(); if (debug == 4) {cout<<"completed Catch"<<endl;} // split F among fleets
-
+ 
 		calc_pop_dynamics(); if (debug == 4) {cout<<"completed Pop Dynamics"<<endl;} // update N - death + growth
 
                 calc_SSB();
-
+  
 		calc_movement(); if (debug == 4) {cout<<"completed Movement"<<endl;}
 
                 calc_survey_abundance();  if (debug == 4) {cout<<"completed Survey Abundance"<<endl;}
 
                 calc_health_indices();  if (debug == 4) {cout<<"completed Survey Abundance"<<endl;}
 
-                calc_assessment_strategy(); if (debug == 4) {cout<<"completed calc_assessment_strategy"<<endl;}
+                // enter assessment module if turned on in data file, if end of year, if curent year is a multiple of assessmentPeriod
+                if (AssessmentOn == 1) {
+                 // if end of year and enough years have passed to perform assessment.
+                 // every AssessmentPeriod we monitor stocks and adjust the effort for the future
+                  if ((t % Nstepsyr == 0) && (yrct <= (Nyrs-AssessmentPeriod))) {
+                   if( yrct % AssessmentPeriod == 0) {
+                     calc_assessment_strategy(); if (debug == 4) {cout<<"completed calc_assessment_strategy"<<endl;}
+                   }
+                  }
+                }
 
 	 }
+       
 
   if (debug == 4) {cout<<"completed timestep loop"<<endl;}
 
@@ -883,6 +948,7 @@ PROCEDURE_SECTION
       cout<<"surv_sigma\n"<<surv_sigma<<endl;
       cout<<"catch_sigma\n"<<catch_sigma<<endl;
       cout <<"guild biomass\n"<<est_survey_guild_biomass<<endl;
+      cout<<"exploitation_update\n"<<exploitation_update<<endl;
       cout<<endl<<"manually exiting at end of procedure section.....\n"<<endl;
       exit(0);
     }
@@ -909,6 +975,7 @@ PROCEDURE_SECTION
       cout<<"eaten_biomass\n"<<eaten_biomass<<endl;
       cout<<"discard_biomass\n"<<discard_biomass<<endl;
       cout<<"otherDead_biomass\n"<<otherDead_biomass<<endl;
+      cout<<"total_biomass\n"<<total_biomass<<endl;
       cout<<"fleet_catch_biomass\n"<<fleet_catch_biomass<<endl;
       cout<<"catch_biomass\n"<<catch_biomass<<endl;
       cout<<"est_fleet_catch_biomass\n"<<est_fleet_catch_biomass<<endl;
@@ -920,6 +987,10 @@ PROCEDURE_SECTION
       cout<<"obs_survey_biomass\n"<<obs_survey_biomass<<endl;
       cout<<"obs_catch_biomass\n"<<obs_catch_biomass<<endl;
       cout<<"est_survey_guild_biomass_assessment\n"<< est_survey_guild_biomass_assessment<<endl;
+      cout<<"predation_mortality\n"<<predation_mortality<<endl;
+      cout<<"fishing_mortality\n"<<fishing_mortality<<endl;
+      cout<<"predation_mortality_size\n"<<predation_mortality_size<<endl;
+      cout<<"fishing_mortality_size\n"<<fishing_mortality_size<<endl;
       cout<<"B0\n"<<B0<<endl;
       cout<<"B0_guilds\n"<<B0_guilds<<endl;
       cout<<"Nguilds\n"<<Nguilds<<endl;
@@ -927,15 +998,25 @@ PROCEDURE_SECTION
       cout<<"Nthresholds\n"<<Nthresholds<<endl;
       cout<<"threshold_proportion\n"<<threshold_proportion<<endl;
       cout<<"exploitation_levels\n"<<exploitation_levels<<endl;
+      cout<<"exploitation_update\n"<<exploitation_update<<endl;
       cout<<"threshold_species\n"<<threshold_species<<endl;
       cout<<"AssessmentPeriod\n"<<AssessmentPeriod<<endl;
       cout<<"SpeciesDetection\n"<<speciesDetection<<endl;
       cout<<"AssessmentOn\n"<<AssessmentOn<<endl;
-      cout<<"index_Simpsons\n"<<index_Simpsons<<endl;
+      cout<<"index_ExploitationRate\n"<<index_ExploitationRate<<endl;
+      cout<<"index_SystemExploitationRate\n"<<index_SystemExploitationRate<<endl;
+      cout<<"index_Simpsons_N\n"<<index_Simpsons_N<<endl;
+      cout<<"index_Simpsons_Nrecip\n"<<index_Simpsons_Nrecip<<endl;
+      cout<<"index_Simpsons_C\n"<<index_Simpsons_C<<endl;
+      cout<<"index_Simpsons_Crecip\n"<<index_Simpsons_Crecip<<endl;
       cout<<"LFI_threshold\n"<<LFI_threshold<<endl;
       cout<<"index_LFI_Biomass\n"<<index_LFI_Biomass<<endl;
       cout<<"index_LFI_Catch\n"<<index_LFI_Catch<<endl;
       cout<<"index_LFI_N\n"<<index_LFI_N<<endl;
+      cout<<"index_predToPreyRatio\n"<<index_predToPreyRatio<<endl;
+      cout<<"index_plankToPiscRatio\n"<<index_plankToPiscRatio<<endl;
+      cout<<"index_stdev_catch\n"<<index_stdev_catch<<endl;
+      cout<<"index_stdev_biomass\n"<<index_stdev_biomass<<endl;
 
       cout<<"\npin file inputs\n"<<endl;
       cout<<"yr1N\n"<<yr1N<<endl;
@@ -946,6 +1027,7 @@ PROCEDURE_SECTION
       cout<<"catch_sigma\n"<<catch_sigma<<endl;
       cout<<"\n data input time series \n"<<endl;
       cout<<"obs_effort\n"<<obs_effort<<endl;
+      cout<<"obs_effortAssess\n"<<obs_effortAssess<<endl;
       cout<<"obs_temp\n"<<obs_temp<<endl;
       cout<<"manually exiting at end of procedure section....\n"<<endl;
 
@@ -981,9 +1063,23 @@ FUNCTION calc_initial_states
   est_survey_biomass_assessment.initialize();
   est_fleet_catch_guild_assessment.initialize();
   covariates_M.initialize();
+  index_predBio.initialize();
+  index_preyBio.initialize();
+  index_predToPreyRatio.initialize();
+  index_plankToPiscRatio.initialize();
+  exploitation_update.initialize();
+  catchToDiscardsSpecies.initialize(); catchToDiscardsGuild.initialize();
+  eaten_biomass_size.initialize();
+  otherDead_biomass_size.initialize();
+  discard_biomass_size.initialize();
+  total_biomass_size.initialize();
+  catch_biomass_size.initialize();
   //andybeet
   fleet_catch_biomass.initialize(); est_fleet_catch_biomass.initialize();
   catch_biomass.initialize();
+  index_stdev_catch.initialize();
+  index_stdev_biomass.initialize();
+
 
   totcatch_fit.initialize(); catchcomp_fit.initialize();
   totbio_fit.initialize(); biocomp_fit.initialize();
@@ -1017,9 +1113,18 @@ FUNCTION calc_initial_states
 // Andybeet                                          maturity_omega(area, spp)*lbinmidpt(spp)) +
 //                                          maturity_covwt(spp)*trans(maturity_cov)(yr)));
                    for (int isizebin=1; isizebin<=Nsizebins; isizebin++) {
+                    // make an exception for dogfish, (species 1). SR relationship used only females. therefore SSB should only use females.
+                    // females considered to be only members of largest size class and only class that can reproduce
+                    // this isn't smart coding. ideally we'd want a function that would create this and we'd just pass parameter values in dat file
+                     if ((spp == 1) && (isizebin < Nsizebins)) {
+                        propmature(area,spp,yr,isizebin) = 0;
+                     } else if ((spp == 1) && (isizebin == Nsizebins)) {
+                        propmature(area,spp,yr,isizebin) = 1;// eventually code for covariates on dogfish
+                     } else {
 			propmature(area,spp,yr,isizebin) = 1/(1+exp(-(maturity_nu(area, spp) +
                                           maturity_omega(area, spp)*lbinmidpt(spp,isizebin)) +
                                           covariates_M(spp,yr)));
+                    }
                    }
 		}
     }
@@ -1035,12 +1140,15 @@ FUNCTION calc_initial_states
           //fill Fyr array with area, species, fleet, year specific Fs
           // Fyr(area,spp,fleet) = avg_F(area,spp,fleet) + F_devs(spp,fleet); //WARNING ONLY WORKS WITH 1 AREA:REDO
 //            Fyr(area,spp,fleet) = log(fishery_q(area,spp,fleet)*obs_effort(area,fleet)); //Andy Beet
+//            effordScaled redundant. we now use proportion of GB effort to shelf effort rather than assume constant scaling
             Fyr(area,spp,fleet) = fishery_q(area,spp,fleet)*obs_effort(area,fleet)*effortScaled(area,spp); //Andy Beet
+//                  Fyr(area,spp,fleet) = fishery_q(area,spp,fleet)*obs_effort(area,fleet); //Andy Beet
+              
       }
     }
   }
 
-
+  
 
 
 
@@ -1101,6 +1209,7 @@ FUNCTION calc_initial_states
 FUNCTION calc_update_N
 //----------------------------------------------------------------------------------------
 // simply make N(t) = N(t-1)
+ test<<t<<endl;
  for (area=1; area<=Nareas; area++){
   	for(spp=1; spp<=Nspecies; spp++){
             for(int isize=1; isize<=Nsizebins; isize++){
@@ -1113,9 +1222,6 @@ FUNCTION calc_update_N
 //----------------------------------------------------------------------------------------
 FUNCTION calc_recruitment
 //----------------------------------------------------------------------------------------
-
-
-
 
   //recruitment(t) =  recruitment_alpha  * pow (egg production(t-1),recruitment_shape) *
   //              exp(-recruitment_beta * egg production(t-1) +
@@ -1156,6 +1262,7 @@ FUNCTION calc_recruitment
 			recruitment(area,spp)(yrct) = recruitment_alpha(area,spp) * SSB(area,spp)(yrct-1) /
                                          (1 + (recruitment_beta(area,spp) * SSB(area,spp)(yrct-1)));
                                      //"effective recruitment" with env covariates; see Quinn & Deriso 1999 p 92
+              /////////////////////////////////////////////// WHY -ve recruitment_covwt /////////////////////////////////////////////////////
                                       recruitment(area,spp)(yrct) *= mfexp(-recruitment_covwt(spp) * trans(recruitment_cov)(yrct-1));
 		  break;
 
@@ -1163,9 +1270,9 @@ FUNCTION calc_recruitment
            case 6:
 			//SSB(area,spp)(yrct) /= Nstepsyr; //average SSB for a single "spawning" timestep, now SSB is at time t
 			recruitment(area,spp)(yrct) = recruitment_alpha(area,spp) * SSB(area,spp)(yrct-1) /
-                                         (1 + (recruitment_beta(area,spp) * pow( SSB(area,spp)(yrct-1),recruitment_shape(area,spp)) ));
+                                         (1 +  pow( SSB(area,spp)(yrct-1)/recruitment_beta(area,spp),recruitment_shape(area,spp)) );
                                      //"effective recruitment" with env covariates; see Quinn & Deriso 1999 p 92
-                                      recruitment(area,spp)(yrct) *= mfexp(-recruitment_covwt(spp) * trans(recruitment_cov)(yrct-1));
+                                      recruitment(area,spp)(yrct) *= mfexp(recruitment_covwt(spp) * trans(recruitment_cov)(yrct-1));
 
                  break;
 
@@ -1173,15 +1280,12 @@ FUNCTION calc_recruitment
                        recruitment(area,spp)(yrct) = mfexp(avg_recruitment(area,spp)+recruitment_devs(area,spp,yrct));
 		  break;
 		  default:
-            cout<<"undefined recruitment type, check .dat file"<<endl;
             exit(1);
 		} //end switch
-
         if(stochrec(spp)){                //simulate devs around recruitment curve
            recruitment(area,spp)(yrct) *=  mfexp(recsigma(area,spp) * rec_procError(area,spp)(yrct-1)
                                                   - 0.5 * recsigma(area,spp) * recsigma(area,spp));
         }  //end if stochastic
-
         // Now add recruitment to 1st size class
         N(area,spp,t,1) = N(area,spp,t,1) + recruitment(area,spp,yrct);
 
@@ -1245,17 +1349,20 @@ FUNCTION calc_pred_mortality
 //----------------------------------------------------------------------------------------
 FUNCTION calc_fishing_mortality
 //----------------------------------------------------------------------------------------
-
+ 
   //NOTE: Ftots are by area, species, and should be separated by fleet
   //not currently set up that way, assuming each fleet has same Ftot and they sum to F
   //selectivities are not currently by area, assuming fleet selectivity same in each area
   for (area=1; area<=Nareas; area++){
       for(spp=1; spp<=Nspecies; spp++){
+
+
            for(fleet=1; fleet<=Nfleets; fleet++){
                for(int isizebin=1; isizebin<=Nsizebins; isizebin++) { //abeet added this loop to avoid compilation warnings.
                // could be created in calc_initial_sattes since it is not time dependent
             	  fishsel(area,spp,fleet,isizebin) = 1/(1 + mfexp(-(fishsel_c(spp,fleet) +
                                      (fishsel_d(spp,fleet)*lbinmidpt(spp,isizebin)))));
+                   
 
                  // Ffl(area,spp,fleet,t,isizebin) = fishsel(area,spp,fleet,isizebin)*(Fyr(area,spp,fleet,yrct))/Nstepsyr; //Andy Beet
                   // "catch mortality by fleet"  multiply by 1-p(discard) .i.e all landable catch:  p(no discard)
@@ -1264,19 +1371,16 @@ FUNCTION calc_fishing_mortality
                   Dfl(area,spp,fleet,t,isizebin) = (discard_Coef(area,spp,fleet,isizebin)*(1-discardSurvival_Coef(area,spp,fleet,isizebin))
                                                   *fishsel(area,spp,fleet,isizebin))*(Fyr(area,spp,fleet,yrct))/Nstepsyr; //Andy Beet
 
-                  // partition fishing mortality,F  into "catch mortality", and "discard mortality", D
+                  // partition fishing mortality,F  into "landings mortality", and "discard mortality", D
                   //  (1-p(discard)).F    +   p(discard).(1-p(discard|survive)).F
                   // == F - F.p(discard).p(survive|discard). See documentation
                }
-
                // sum mortalities over fleet
                D(area,spp,t) += Dfl(area,spp,fleet,t);
                F(area,spp,t) += Ffl(area,spp,fleet,t);
       }
     }
   }
-
-
 
 //----------------------------------------------------------------------------------------
 FUNCTION calc_total_mortality
@@ -1286,7 +1390,7 @@ FUNCTION calc_total_mortality
 
        //mort components, with all fleets already in F and D
        // F is mortality due to Fishing - landed species, D is discard mortality
-       // Split F up in calc_catch_etc
+       // Split F up in calc_catch_etc. Catch = F (landings) + D (discards)
        Z(area,spp,t) = M1(area,spp) +  M2(area,spp,t) +  F(area,spp,t) + D(area,spp,t);
      }
  }
@@ -1308,21 +1412,45 @@ FUNCTION calc_catch_etc
       // note: Z = total mortality
 
       //these are numbers at size dying each timestep from fishing, predation, and M1 (other)
-      C(area,spp,t) = elem_prod(Fprop, Ndeadtmp); //fishing
+      C(area,spp,t) = elem_prod(Fprop, Ndeadtmp); //fishing catch on GB
       eatN(area,spp,t) = elem_prod(M2prop, Ndeadtmp); // predation, M2
-      discardN(area,spp,t) = elem_prod(Dprop,Ndeadtmp); // discards on vessel
+      discardN(area,spp,t) = elem_prod(Dprop,Ndeadtmp); // discards on vessel either not target species or not allowed to land
       otherDead(area,spp,t) = Ndeadtmp - C(area,spp,t) - eatN(area,spp,t)- discardN(area,spp,t); // M1
-     // C_tot(area,spp,yrct) += C(area,spp,t-1)
+
+      // all catch is considered discard since can not be landed if found to be so in assessment.
+      // catchTtoDiscards is a binary vector indicating threshold exceedance. Default all = 0
+      if (catchToDiscardsSpecies(area,spp) == 1) {
+         discardN(area,spp,t) =  discardN(area,spp,t) + C(area,spp,t);
+         C(area,spp,t) = 0.0;
+      }
+
+          
+      // check to see if species part of a guild in trouble. if so set catch to discards and catch(landings) = 0
+      //      Default flag:  all = 0
+      if (catchToDiscardsGuild(area,guildMembers(spp)) == 1) {
+         // this species is a member of a guild whose guild biomass has exceeded threshold
+        discardN(area,spp,t) =  discardN(area,spp,t) + C(area,spp,t);
+        C(area,spp,t) = 0.0;
+      }
+
+      // size class level
+      eaten_biomass_size(area,spp,yrct) += wtconv*elem_prod(eatN(area,spp,t),binavgwt(spp));
+      discard_biomass_size(area,spp,yrct) +=  wtconv*elem_prod(discardN(area,spp,t),binavgwt(spp));
+      otherDead_biomass_size(area,spp,yrct) += wtconv*elem_prod(otherDead(area,spp,t),binavgwt(spp));
+      total_biomass_size(area,spp,yrct) += wtconv*elem_prod(N(area,spp,t),binavgwt(spp));
+
       //these are annual total biomass losses for comparison with production models
       eaten_biomass(area,spp,yrct) += sum(wtconv*elem_prod(eatN(area,spp,t),binavgwt(spp)));
       discard_biomass(area,spp,yrct) +=  sum(wtconv*elem_prod(discardN(area,spp,t),binavgwt(spp)));
       otherDead_biomass(area,spp,yrct) += sum(wtconv*elem_prod(otherDead(area,spp,t),binavgwt(spp)));
-
+      total_biomass(area,spp,yrct) += sum(wtconv*elem_prod(N(area,spp,t),binavgwt(spp)));
+      
       //do fleet specific catch in numbers, biomass, sum for total catch
       for(fleet=1; fleet<=Nfleets; fleet++){
 	  dvar_vector Fflprop = elem_div(Ffl(area,spp,fleet,t),F(area,spp,t));// proportion dead due to fleet in each size class. vec length= num classes
           Cfl(area,spp,fleet,t) = elem_prod(Fflprop, C(area,spp,t)); // numbers dying from fleet by sizeclass
           fleet_catch_biomass(area,spp,fleet,yrct) += sum(wtconv*elem_prod(Cfl(area,spp,fleet,t),binavgwt(spp)));
+          catch_biomass_size(area,spp,yrct) += wtconv*elem_prod(Cfl(area,spp,fleet,t),binavgwt(spp));
           catch_biomass(area,spp,yrct) += sum(wtconv*elem_prod(Cfl(area,spp,fleet,t),binavgwt(spp)));
 
           //add obs error for est fleet catch, sum for est total catch for simulations
@@ -1335,7 +1463,8 @@ FUNCTION calc_catch_etc
 
           for (int isize=1; isize<=Nsizebins; isize++){
               // used for indices- LFI
-              C_tot(area,spp,yrct,isize) += C(area,spp,t,isize); //  total number dead due to fishing in a year by size class summed over Nstepsyr timesteps
+              Cfl_tot(area,spp,fleet,yrct,isize) +=  Cfl(area,spp,fleet,t,isize);// fishing. total number by size/species/fleet each year. summed over t
+              C_tot(area,spp,yrct,isize) += Cfl(area,spp,fleet,t,isize); // fishing. total number by size/species each yr summed over fleet and Nstepsyr timesteps
           }
 
       }//end fleet loop
@@ -1344,7 +1473,25 @@ FUNCTION calc_catch_etc
 
 
  // aggregate catch to guild level at end of year Andy Beet
+ // also calculate predation rate and fishingRate
    if ((t % Nstepsyr == 0) && (yrct <= Nyrs)){
+
+   for(area=1; area<=Nareas; area++){
+          for (spp=1; spp<=Nspecies; spp++) {
+             for (int isize = 1; isize<=Nsizebins; isize++ ) {
+             // look out for nans
+                if (total_biomass_size(area,spp,yrct,isize) < .01) { // zero
+                  predation_mortality_size(area,spp,yrct,isize) = 0;
+                  fishing_mortality_size(area,spp,yrct,isize) = 0;
+                } else {
+                  predation_mortality_size(area,spp,yrct,isize) = eaten_biomass_size(area,spp,yrct,isize)/(total_biomass_size(area,spp,yrct,isize)/Nstepsyr);
+                  fishing_mortality_size(area,spp,yrct,isize) = (catch_biomass_size(area,spp,yrct,isize)+discard_biomass_size(area,spp,yrct,isize))/(total_biomass_size(area,spp,yrct,isize)/Nstepsyr);
+               }
+             }
+              predation_mortality(area,spp,yrct) = eaten_biomass(area,spp,yrct)/(total_biomass(area,spp,yrct)/Nstepsyr);
+              fishing_mortality(area,spp,yrct) = (catch_biomass(area,spp,yrct)+discard_biomass(area,spp,yrct))/(total_biomass(area,spp,yrct)/Nstepsyr);
+          }
+   }
    //  test<< "ttt = "<< t <<", yr =  "<<yrct <<endl;
    for(area=1; area<=Nareas; area++){
        for (int iguild=1; iguild<=Nguilds; iguild++) {
@@ -1361,7 +1508,7 @@ FUNCTION calc_catch_etc
    }
   } // end if t%
 
-
+ 
 //----------------------------------------------------------------------------------------
 FUNCTION calc_pop_dynamics
 //----------------------------------------------------------------------------------------
@@ -1382,7 +1529,7 @@ FUNCTION calc_pop_dynamics
   for (area=1; area<=Nareas; area++){
   	for(spp=1; spp<=Nspecies; spp++){
 
-        // For all bins except smallest. execute from largest to smallest
+        // For all bins except smallest. execute from largest to smallest. Remember N(t) = N(t-1) in first step
         //N = surviving and growing from smaller bin and surviving and staying in current bin
         for(int isize=Nsizebins; isize>=2; isize--){
        	 N(area,spp,t,isize) = N(area,spp,t,isize-1) * exp(-Z(area,spp,t,isize-1)) * growthprob_phi(area,spp,yrct,isize-1)
@@ -1460,7 +1607,7 @@ FUNCTION calc_survey_abundance
 
  // Added by Andy Beet
  // we need to sum up the biomass over each guild and check for excedences.
- // Do at end of year only. Used in assessment module
+ // Do at end of year only. Used in assessment module and health indices module
   if ((t % Nstepsyr == 0) && (yrct <= Nyrs)){
   //  test<< "ttt = "<< t <<", yr =  "<<yrct <<endl;
    for(area = 1; area<=Nareas; area++){
@@ -1479,23 +1626,44 @@ FUNCTION calc_survey_abundance
 FUNCTION calc_health_indices
 //----------------------------------------------------------------------------------------
 // Here we calculate several indices: measures of system health at the end of the year
+// These metrics could all be calculated in R after the run but we may want to use these in management so we need them real time
 
  if ((t % Nstepsyr == 0) && (yrct <= Nyrs)){
 
 // note: we could combine these indices into the same loop, but chose not to ease readability
 // 1. Simpsons Diversity Index (Richness (number of species) and evenness(relative numbers)) = sum((N_i/N)^2) = sum(p_i^2)
 //  we use the  mean N over Nstepsyr as the annual value of N
+// simpsons for N
 
-   for(int iarea=1;iarea<=Nareas;iarea++){
+ for(int iarea=1;iarea<=Nareas;iarea++){
       prob_species.initialize();
       dvariable N_total = 0;
       for (int isp=1; isp<=Nspecies;isp++) {
         prob_species(isp) = pow(sum(N_tot(iarea,isp,yrct))/Nstepsyr,2);
         N_total += sum(N_tot(iarea,isp,yrct))/Nstepsyr;
       }
-      index_Simpsons(iarea,yrct) = sum(prob_species)/pow(N_total,2);
+      index_Simpsons_N(iarea,yrct) = sum(prob_species)/pow(N_total,2);
+      index_Simpsons_Nrecip(iarea,yrct) =1/index_Simpsons_N(iarea,yrct);      
    }
-// 2. Large Fish Index
+
+// simpsons for Catch - summed over fleet
+   for(int iarea=1;iarea<=Nareas;iarea++){
+      prob_species.initialize();
+      dvariable C_total = 0;
+      for (int isp=1; isp<=Nspecies;isp++) {
+          if (sum(C_tot(iarea,isp,yrct))== 0) {
+             prob_species(isp) = 0;
+          } else {
+             prob_species(isp) = pow(sum(C_tot(iarea,isp,yrct))/Nstepsyr,2);
+          }
+        C_total += sum(C_tot(iarea,isp,yrct))/Nstepsyr;
+      }
+      index_Simpsons_C(iarea,yrct) = sum(prob_species)/pow(C_total,2);
+      index_Simpsons_Crecip(iarea,yrct) =1/index_Simpsons_C(iarea,yrct);      
+   }
+
+ //    Cfl_tot(area,spp,fleet,yrct,isize)
+// 2. Large Fish Indices
 //  i. LFI_Biomass = %biomass of largest sizeclass relative to total biomass for each species
 // ii. LFI_Catch = same for catch data
 //iii. LFI_N = number of large fish
@@ -1503,10 +1671,71 @@ FUNCTION calc_health_indices
 //       LF_Biomass = 0;
        for (int isp=1; isp<=Nspecies;isp++) {
           index_LFI_Biomass(iarea,isp,yrct) = B_tot(iarea,isp,yrct,Nsizebins)/sum(B_tot(iarea,isp,yrct)); // large fish in top size category for each fish. Biomass
-          index_LFI_Catch(iarea,isp,yrct) = C_tot(iarea,isp,yrct,Nsizebins)/sum(C_tot(iarea,isp,yrct)); // large fish in top size category for each fish. Catch
+          if (sum(C_tot(iarea,isp,yrct)) == 0) {
+            index_LFI_Catch(iarea,isp,yrct) = 0;
+          } else {
+            index_LFI_Catch(iarea,isp,yrct) = C_tot(iarea,isp,yrct,Nsizebins)/sum(C_tot(iarea,isp,yrct)); // large fish in top size category for each fish. Catch
+          }
           index_LFI_N(iarea,isp,yrct) = N_tot(iarea,isp,yrct,Nsizebins)/Nstepsyr; // number of large fish per year
        }
    }
+// 3. Predator to prey biomass ratio. (Pred = dogfish, skate, goosefish, cod, silverhake ) / (Prey = herring, mackerel,haddock, yellowtail, winter flounder)
+//      uses average annual biomass for each species (over all sizeclasses)
+// 4. planktivore : piscivore ratio
+   for (int iarea=1;iarea<=Nareas;iarea++) {
+     for (int isp=1; isp<=Nspecies ; isp++){
+     // pred:prey
+      if (predOrPrey(isp) == 1) { // predator
+         index_predBio(iarea,yrct) += avByr(iarea,isp,yrct);
+       } else { // prey
+         index_preyBio(iarea,yrct) += avByr(iarea,isp,yrct);
+       }
+     }
+     index_predToPreyRatio(iarea,yrct) = index_predBio(iarea,yrct)/index_preyBio(iarea,yrct);
+     // planktivore:piscivore
+     index_plankToPiscRatio(iarea,yrct) = est_survey_guild_biomass(iarea,2,yrct)/est_survey_guild_biomass(iarea,1,yrct);
+   }
+     
+// 5. variance of catch using a m-year moving window (bandwidth_metric)
+   if (yrct >= bandwidth_metric) { // take mean of last bandwidth_metric years
+      for (int iarea=1; iarea<=Nareas; iarea++){
+            for (int isp=1; isp<=Nspecies; isp++) {
+           index_catch.initialize();
+            index_biomass.initialize();
+               int ic = 0;
+                for (int iyear = yrct-bandwidth_metric+1;  iyear<=yrct; iyear++) {
+                  // test << iyear << "," << est_catch_biomass(iarea,isp,iyear)  <<endl;
+                   ic++;
+                   index_catch(ic) = est_catch_biomass(iarea,isp,iyear);
+                   index_biomass(ic) = avByr(iarea,isp,iyear);
+                  //test << iyear << "," << catch_data(ic)  << endl;
+                }
+                if (sum(index_catch) == 0) {
+                   index_stdev_catch(iarea,isp,yrct) = 0;
+                } else {
+                   index_stdev_catch(iarea,isp,yrct) = std_dev(index_catch);
+                }
+                if (sum(index_biomass) == 0) {
+                   index_stdev_biomass(iarea,isp,yrct) = 0;
+                } else {
+                   index_stdev_biomass(iarea,isp,yrct) = std_dev(index_biomass);
+                }
+              //  test << yrct << "," << mean(catch_data)<<","<< std_dev(catch_data) << "\n"<<endl;
+            }
+      }
+   }
+// 6. Exploitation Rate
+      for (int iarea=1; iarea<=Nareas; iarea++){
+         dvariable total_catch = 0.0;
+         dvariable total_bio = 0.0;
+
+            for (int isp=1; isp<=Nspecies; isp++) {
+                index_ExploitationRate(iarea,isp,yrct) = est_catch_biomass(iarea,isp,yrct)/total_biomass(iarea,isp,yrct);
+                total_catch += est_catch_biomass(iarea,isp,yrct);
+                total_bio += total_biomass(iarea,isp,yrct);
+            }
+            index_SystemExploitationRate(iarea,yrct) = total_catch/total_bio;
+      }
 
   } // end of year if
 
@@ -1516,17 +1745,18 @@ FUNCTION calc_health_indices
 FUNCTION calc_assessment_strategy
 //----------------------------------------------------------------------------------------
 
- if (AssessmentOn == 1) {
+// We enter this loop every AssessmentPeriod years, during the last time period of the year.  
+// We are seeing if any of the individual species or complexed have dropped below a threshold (threshold_proportion) given in data file
+// An updated level of effort is then calculated based on the threshold exceeded.
+// Each species or complex is flagged to indicate which have breached the minimum threshold (indicating big trouble).
+// Consequently landings are not allowed and all catch is considered discards. This is dealt with in catch module
 
- // if end of year and enough years have passed to perform average.
- // every AssessmentPeriod we monitor stocks and adjust the effort for the future
 
-  if ((t % Nstepsyr == 0) && (yrct <= (Nyrs-AssessmentPeriod))) {
-    if( yrct % AssessmentPeriod == 0) {
-       // We enter this loop every AssessmentPeriod years, at the last time period of the year.
-      // now average the guild biomass values over AssessmentPeriod yrs and then we check to see if the levels exceed some threshhold
+   // guild level calcs
+   // now average the guild biomass values over AssessmentPeriod yrs and then we check to see if the levels exceed some threshhold
      for (area=1 ; area<=Nareas; area++) {
          for (iguild=1; iguild<=Nguilds; iguild++) {
+             catchToDiscardsGuild(area,iguild) = 0;//resets flag to indicate species has not exceeded min threshold
              maxGuildThreshold(area,iguild) = Nthresholds; // set all to maximum worst case is that no change is made to effort
              for (iassess=1; iassess<=AssessmentPeriod;iassess++){
                   // calculate the mean biomass and catch over the Assessment period
@@ -1539,21 +1769,35 @@ FUNCTION calc_assessment_strategy
              for (ithreshold=1; ithreshold<=Nthresholds; ithreshold++) {
              // test<<yrct<<","<<iguild<<","<<ithreshold<<endl;
                  if ((est_survey_guild_biomass_assessment(area,iguild,yrct)/B0_guilds(area,iguild)) <= threshold_proportion(ithreshold)) {
-                   // test << est_survey_guild_biomass_assessment(area,iguild,yrct)/B0_guilds(area,iguild)<<endl;
 
-                    maxGuildThreshold(area,iguild) = ithreshold;
+                   maxGuildThreshold(area,iguild) = ithreshold;
+                   if (est_survey_guild_biomass_assessment(area,iguild,yrct)/B0_guilds(area,iguild) <= baseline_threshold) { // this is case where most severe threshold is breached
+                       // all catch => discards and nothing can be landed. create binary vector
+                       catchToDiscardsGuild(area,iguild) = 1;
+                    }
+
                     // dont need to keep going for this guild since we've found the most severe case
                     break;
                   }
 
               }// threshold loop
+  //                   cout<<catchToDiscardsGuild(area,iguild)<<endl;
+
          } // guild loop
+       maxThreshold(area) =  min(maxGuildThreshold(area));
+//       cout<<maxThreshold(area)<<endl;
      }  // area loop
 
-     // we do the same thing but check for exceedances at the species level also
+
+
+    // check for species falling below threshold
+   
+   if (speciesDetection == 1) { // include species detection level in determining rate change
+     // we check for exceedances at the species level 
      // take the mean abundance over last AssessmentPeriod yrs for each species
      for (area=1; area<=Nareas; area++){
          for (spp=1; spp<=Nspecies; spp++){
+             catchToDiscardsSpecies(area,spp) = 0; //resets flag to indicate species has not exceeded min threshold
              maxSpeciesThreshold(area,spp) = Nthresholds; // set all to safe level
              for (iassess=1; iassess<=AssessmentPeriod; iassess++){
                  // mean of last few years
@@ -1563,48 +1807,49 @@ FUNCTION calc_assessment_strategy
              for (ithreshold=1; ithreshold<=Nthresholds; ithreshold++) {
                  if ((est_survey_biomass_assessment(area,spp,yrct)/B0(area,spp)) <= (threshold_proportion(ithreshold)+threshold_species(spp))) {
                     maxSpeciesThreshold(area,spp) = ithreshold;
+                    if (est_survey_biomass_assessment(area,spp,yrct)/B0(area,spp)  <= baseline_threshold ) { 
+                       // all catch => discards and nothing can be landed. create binary vector
+                       catchToDiscardsSpecies(area,spp) = 1;
+                    }
                     // dont need to keep going for this species since we've found the most severe case
                     break;
                   }
 
              }// threshold loop
-             test<<maxSpeciesThreshold(area,spp)<<", ";
+         //    cout<<spp<<"-"<<maxSpeciesThreshold(area,spp)<<endl;
          } // spp  loop
+         maxThreshold(area) = min(maxThreshold(area),min( maxSpeciesThreshold(area)));
+     // cout<<maxThreshold<<endl;
+     // cout<<endl;
      } // area loop
-    // test<<endl;
+  } // species detection
+
 
      // now we have checked for exceedences we need to act on them.
      // calculate the new exploitation rate and then the new value of Effort.
      // note that if maxThreshold = Nthresholds we revert to max exploitation.
-     // if any species <= threshold minimum exploitation rate.
-     // First find the threshold each guild exeeded and the most severe of all combined
-     for (area=1; area<=Nareas;area++) {
-       int icount = 0;
-        for (iguild=1;iguild<=Nguilds;iguild++) {
-         //test<< maxGuildThreshold(area,iguild)<<endl;
-            if (icount == 0) {
-                 maxThreshold(area) =  maxGuildThreshold(area,iguild);
-            } else {
-                 maxThreshold(area) = min(maxThreshold(area),maxGuildThreshold(area,iguild));
-            }
-             icount++;
-         }
-         if (speciesDetection == 1) { // include species detection level in determining rate change
-          for (spp=1; spp<=Nspecies; spp++){
-             maxThreshold(area) = min(maxThreshold(area),maxSpeciesThreshold(area,spp));
-          }
-         }
+     // Also if the scenario is a FixedRate scenario we set exploitation rates all equal to fixed rate in data file, therefore when we
+     // encounter this phase the efort is unchanged
 
-     }
-     for (area=1; area<=Nareas; area++){
-         for (iguild=1; iguild<=Nguilds; iguild++) {
-        //      test<<yrct<<","<<maxGuildThreshold(area,iguild) <<","<<maxThreshold(area)<<","<<threshold_proportion(maxThreshold(area))<<","<<exploitation_levels(maxThreshold(area))<<endl;
+     // store current exploitation level and set it for next few years until new assessment is due. used as output only
+      // if first time set exploitation_update for the first few years prior to assessment
+      for (area=1; area<=Nareas; area++) {
+         if (t==(Nstepsyr*AssessmentPeriod)) { //first assessment. assign 1st 3 yrs (not effected by assessment) to actual starting value of exploitation
+           for (int iassess=1; iassess <= AssessmentPeriod; iassess++) {
+             exploitation_update(area,iassess) =  exploitation_levels(Nthresholds);
+           }
+         }
+          // set all subsequent yrs to new exploitation otherwise last few years will revert to original rate/ 
+         for (int iy = yrct+1; iy<=Nyrs; iy++) {
+          exploitation_update(area,iy) = exploitation_levels(maxThreshold(area));
          }
      }
 
-     // now we calculate the new effort for each fleet.//
+
+     // now we calculate the new effort for each fleet.
      // Note that all fleets are impacted for any guild exceedance. This can and should change
      for (area=1 ; area<=Nareas ; area++) {
+
         for (int ifleet=1;ifleet<=Nfleets;ifleet++){
          if ( mean_fishery_q(area,ifleet) < 1e-29){ // a fleet doesn't fish a particluar guild. keep effort same
               // this will only happen at guild q not fleet q.
@@ -1612,7 +1857,6 @@ FUNCTION calc_assessment_strategy
          } else {
               effort_updated(area,ifleet) = exploitation_levels(maxThreshold(area))/mean_fishery_q(area,ifleet);
          }
-//         test<<obs_effort(area,ifleet,yrct)<<","<<effort_updated(area,ifleet)<<","<<mean_fishery_q(area,ifleet)<<endl;
         }
      }
      // now effort is used just once in initial.calcs() to obtain the Fyr terms for the whole simulation  so
@@ -1620,21 +1864,16 @@ FUNCTION calc_assessment_strategy
      for (area=1; area<=Nareas ; area++) {
         for (spp=1; spp<=Nspecies; spp++) {
             for (int ifleet=1; ifleet<=Nfleets; ifleet++) {
-               for (int iassess=1; iassess <= AssessmentPeriod; iassess++) {
-//                 obs_effort(area,ifleet,yrct+iassess) = value(effort_updated(area,ifleet));
-
-                Fyr(area,spp,ifleet,yrct+iassess) = fishery_q(area,spp,ifleet)*effort_updated(area,ifleet); //Andy Beet
+                for (int iy = yrct+1; iy<=Nyrs; iy++) {// set all subsequent yrs to new effort otherwise last few years will revert to original rate
+                 // this will all be updated during next assessment
+//               for (int iassess=1; iassess <= AssessmentPeriod; iassess++) {
+                  obs_effortAssess(area,ifleet,iy) = effort_updated(area,ifleet); // output only
+                  Fyr(area,spp,ifleet,iy) = fishery_q(area,spp,ifleet)*effort_updated(area,ifleet)*effortScaled(area,spp); //Andy Beet
                 }
-//                test<<Fyr(area,spp,ifleet,yrct+1)<<endl;
             }
         }
      }
-
-
-   } //end if yrct
-  }// end if t%
-
-  } //end if assessment on
+ 
 
 
 
