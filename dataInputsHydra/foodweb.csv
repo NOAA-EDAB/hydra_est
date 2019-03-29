@@ -1,11 +1,4 @@
-,spinydog,winterskate,Aherring,Acod,haddock,yellowtailfl,winterfl,Amackerel,silverhake,goosefish
-spinydog,1,0,0,0,0,0,0,0,0,1
-winterskate,1,0,0,0,0,0,0,0,0,0
-Aherring,1,1,0,1,1,0,0,0,1,1
-Acod,1,1,0,1,1,0,0,0,0,1
-haddock,1,1,0,0,1,0,0,0,0,1
-yellowtailfl,1,0,0,0,0,0,0,0,0,1
-winterfl,1,0,0,0,0,0,0,0,0,1
-Amackerel,1,1,0,1,0,0,0,0,1,1
-silverhake,1,1,0,1,1,0,0,0,1,1
-goosefish,0,0,0,0,0,0,0,0,0,1
+,Aherring,Acod,silverhake
+Aherring,0,1,1
+Acod,0,1,0
+silverhake,0,1,1
