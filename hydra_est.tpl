@@ -44,8 +44,6 @@
 //
 // Dec 29, 2016: Modified and extended by Andy Beet
 //             : see word doc, documenting changes
-//
-// Estimation model modified from the Hydra simulation model hydra_sim_guild
 //=======================================================================================
 GLOBALS_SECTION
 //=======================================================================================
@@ -174,8 +172,6 @@ DATA_SECTION
   int iassess            // loop counter in calc_assessment_strategy
   int ithreshold         // loop counter in calc_assessment_strategy
   ivector maxThreshold(1,Nareas) // stored most severe  threshold detected
-  ivector nFt(1,Nspecies);                       //Number of fishing mortality parameters to be estimated -- JMB 
-
 
   number o
   !!  o = 0.001;         //small number to add before taking logs in objective function calcs
@@ -542,26 +538,27 @@ DATA_SECTION
   init_int bandwidth_metric // moving window for catch variance
   number baseline_threshold // value of threshold that we stop landing catch. Typically 0.2
   !!  baseline_threshold = 0.2;
-
-  //Added by JMB
-  ivector nBpen(1,Nspecies);      //Number of iterations where Bpen (within the calc_biomass_penalty function) was > 0 // JMB
-  ivector lBpen(1,Nspecies);       //Last iteration where the Bpen was > 0 // JMB
-  int nOpen;                         //Number of iterations where Open (within calc M2 function) was > 0 // JMB
-  int lOpen;                          //Last iteration where Open was > 0 // JMB
-  //Data weightings // JMB
-  init_number Owt;               //Weight for the other food penalty term, Open // JMB
-  init_vector TCwt(1,Nspecies);            //Total annual commercial catch in weight // JMB
-  init_vector CPwt(1,Nspecies);            //Commercial catch proportions at age // JMB
-  init_vector Bwt(1,Nspecies);              //Weight for Biomass Penalty Term, Bpen // JMB
-  init_vector Ywt(1,Nspecies);              //Weight for Yr1 Penalty Term, Ypen) // JMB
-  init_vector Rwt(1,Nspecies);              //Weight for Recruitment Penalty Term, Rpen // JMB
-  init_vector FHwt(1,Nspecies);           //Food habits proportions by weight // JMB
-  int nFIC;                               //Number of surveys // JMB
-  3darray Cprop(1,Nspecies,1,Nyrs,1,Nsizebins);             //Proportion-at-age of the commercical catch, CAA // JMB
-  init_number p;                    //Tiny number for calculation of multinomial residuals //JMB
-
-//flag marking end of file for data input
+ //flag marking end of file for data input
   init_int eof;
+
+  //Read in second data file - objective function weighting --JMB
+  !!ad_comm::change_datafile_name("ofv_weights.dat");
+  init_int nFIC                       //Number of trawl survey datasets
+  init_number p	                      //Tiny number for calculation of multinomial residuals
+  init_number Owt	              //Weight for the 'other food' penalty term, Open (think O_pen)
+  init_vector TCwt(1,Nspecies)	      //Total annual commercial catch in weight
+  init_vector CPwt(1,Nspecies)	      //Commercial catch proportions at age
+  init_vector Bwt(1,Nspecies)	      //Weight for Biomass Penalty Term, Bpen
+  init_vector Ywt(1,Nspecies)	      //Weight for Yr1 Penalty Term, Ypen)
+  init_vector Rwt(1,Nspecies)	      //Weight for Recruitment Penalty Term, Rpen
+  init_vector FHwt(1,Nspecies)	      //Food habits proportions by weight
+  init_vector Bthres(1,Nspecies)      //Biomass threshold used in penalty function to avoid B == 0 (crash)
+  init_vector Rthres(1,Nspecies)      //Threshold for the coefficient of variation of recruitment
+  init_matrix TSwt(1,Nspecies,1,nFIC) //Total annual survey catch in number/tow
+  init_matrix SPwt(1,Nspecies,1,nFIC) //Survey catch proportions-at-age
+  init_int eof2                       //End of file flag for second data file
+
+
 
 //debugging section, check inputs and initial calculations
 	LOCAL_CALCS
@@ -831,43 +828,9 @@ PARAMETER_SECTION
   matrix index_SystemExploitationRate(1,Nareas,1,Nyrs) // system exploitation rate
   matrix  exploitation_update(1,Nareas,1,Nyrs) // changing exploitation rate
 
-//  matrix objfun_areaspp(1,Nareas,1,Nspecies) //sum over components for area and species //JMB
-  vector TCres(1,Nspecies);     //Objective function component: Total commercial catch //JMB
-  vector CPmulti(1,Nspecies);  //Objective function component: Catch-at-age proportions //JMB
-  vector FHmulti(1,Nspecies);  //Objective function component: Predator diet proportions //JMB
-  3darray TCresid(1,Nareas,1,Nspecies,1,Nyrs);       //Residuals of total commercial catch *in weight*; summed over ages //JMB
-  3darray TSresA(1,Nareas,1,Nspecies,1,Nareas);      //Objective function component: Total survey catch, method A //JMB -- was nFIC in MS-SCA, need new variable?
-  3darray TSresB(1,Nareas,1,Nspecies,1,Nareas);      //Objective function component: Total survey catch, method B //JMB -- was nFIC in MS-SCA, need new variable?
-  matrix SPmulti(1,Nspecies,1,Nareas);      //Objective function component: Survey catch-at-age proportions //JMB -- was nFIC in MS-SCA, need new variable?
-//  //Food selection parameters; converting initial parameters to [predator species x prey species] matrices //JMB
-//  3darray toteps(1,Nspecies,1,nFIC,1,Nyrs);          //Residuals of total survey catch, TotFIC, Calculated by Method A //JMB
-  3darray TotFIC_hat(1,Nareas,1,Nspecies,1,Nyrs); //Total survey (FIC) catch in number/tow; summed over ages //JMB
-  3darray TSresid(1,Nareas,1,Nspecies,1,Nyrs);       //Residuals of total survey catch, TotFIC, Calculated by Method B //JMB
-  3darray Cprop_hat(1,Nspecies,1,Nyrs,1,Nsizebins);  //Commercial catch proportions-at-age //JMB
-//  4darray Sprop_hat(1,Nspecies,1,nFIC2,1,Nyrs,1,nage);  //Survey catch proportions-at-age //JMB
-//  4darray FH_hat(1,nsp2,1,Nspecies,1,nage,1,nsp2+1);             //Predicted FH, summed over all prey ages, and including OFood //JMB
+  matrix objfun_areaspp(1,Nareas,1,Nspecies) //sum over components for area and species
 
-  number ofv_ideal;         //Total objective function value, subtracting out the ideal multinomial values
-  number Open;              //Penalty function for Other Food (within M2 fx)
-  number tOpen;             //Total Other Food penalty
-  vector Bpen(1,Nspecies);      //Penalty function for biomass and calculation of M2
-  vector tBpen(1,Nspecies);     //Total Biomass penalty for each species
-  vector Ypen(1,Nspecies);      //Penalty function for Year 1 abundances
-  vector tYpen(1,Nspecies);     //Total Yr1 penalty for each species
-  vector Rpen(1,Nspecies);      //Penalty function for the CV of recruitment
-  vector tRpen(1,Nspecies);     //Total Recruitment penalty for each species
-  vector Devs(1,Nspecies);      //Square of summed deviations for each deviation initial parameter
-  vector ofvsp(1,Nspecies);          //Total objective function value for each species
-  vector ofvsp_ideal(1,Nspecies); //Total objective function value for each species, subtracting out the ideal multinomial values
-  3darray TotC_hat(1,Nareas,1,Nspecies,1,Nyrs);     //Total commerical catch *in weight*; summed over ages
-  matrix dAge1(1,Nspecies,2,Nyrs);     //Annual deviations in recruits (necessary because initially declared as vector_vector)
-  matrix dFt(1,Nspecies,1,nFt);               //Annual deviations in Fs (necessary because initially declared as vector_vector)
-  matrix sumC(1,Nspecies,1,Nyrs);                            //Sum of obs CAA; Used to determine if age samples were taken in a particular yr
-
-
-  objective_function_value ofv;
-
-//  objective_function_value objfun  //JMB
+  objective_function_value objfun
 
   	LOCAL_CALCS
     if (debug == 2)
@@ -953,8 +916,7 @@ PROCEDURE_SECTION
   if (debug == 4) {cout<<"completed timestep loop"<<endl;}
 
   evaluate_the_objective_function(); if (debug == 4) {cout<<"completed Log Likelihood"<<endl;}
-  //exit(-999);
-  
+
   if (debug == 3 && sim == 0)
     {
       cout<<"rseed\n"<<rseed<<endl;
@@ -1967,235 +1929,43 @@ FUNCTION write_simout
 FUNCTION evaluate_the_objective_function
 //----------------------------------------------------------------------------------------
 
-//**********************Placeholder from Sarah's simulation model*****************************************
-//  //est and observed survey biomass and fishery catch are 3darrays(area,spp,yr)
-//  //fit matrices are area by spp
-//
-//   resid_catch.initialize();
-//   resid_bio.initialize();
-//   totcatch_fit.initialize();
-//   totbio_fit.initialize();
-//   objfun_areaspp.initialize();
-//
-//  for (area=1; area<=Nareas; area++){
-//  	for(spp=1; spp<=Nspecies; spp++){
-//
-//       resid_catch(area,spp) = log(obs_catch_biomass(area,spp)+o)-log(est_catch_biomass(area,spp)+o);
-//       totcatch_fit(area,spp) = norm2(resid_catch(area,spp));
-//
-//       resid_bio(area,spp) = log(obs_survey_biomass(area,spp)+o)-log(est_survey_biomass(area,spp)+o);
-//       totbio_fit(area,spp) = norm2(resid_bio(area,spp));
-//    }
-//  }
-//  //cout<<"resid_catch\n"<<resid_catch<<endl;
-//  //cout<<"totcatch_fit\n"<<totcatch_fit<<endl;
-//  //cout<<"totbio_fit\n"<<totbio_fit<<endl;
-//
-//  objfun_areaspp = totcatch_fit + totbio_fit;
-//  //cout<<"objfun_areaspp\n"<<objfun_areaspp<<endl;
-//
-//  objfun = sum(objfun_areaspp);
-//
-//  cout << "Object function value:" << objfun << endl;
-//  ofstream out_objective_val("objective_val.dat",ios::app);
-//  out_objective_val << objfun << endl;
-//
-//**********************End Sarah's placeholder**********************
+  //est and observed survey biomass and fishery catch are 3darrays(area,spp,yr)
+  //fit matrices are area by spp
 
+   resid_catch.initialize();
+   resid_bio.initialize();
+   totcatch_fit.initialize();
+   totbio_fit.initialize();
+   objfun_areaspp.initialize();
 
-//**********************Reworking Kiersten's objective funcation from MS-SCAA model********************** // JMB
-  /*
-  Function calculates the likelihood components for each data source:
-    1.  Total commercial catch, in weight; TotC and TotC_hat
-    2.  Commercial catch proportions-at-age; Cprop and Cprop_hat
-    3.  Total fishery-independent survey catch in number/tow; toteps
-    4.  Survey catch proportion-at-age; Sprop and Sprop_hat
-    5.  Predator food-habits in proportion, by weight, at-age; FH and FH_hat
+  for (area=1; area<=Nareas; area++){
+  	for(spp=1; spp<=Nspecies; spp++){
 
-  For data sources 1 and 3, a lognormal distribution is assumed.  For data sources 2, 4, and 5, two different types of residuals were
-  calculated - A) assuming a multinomial distribution, and B) assuming a multinomial distribution but first subtracting the best possible value of the residuals assuming a perfect fit (so that now the objective function goes to zero)
-  In prevoius versions, I also tried an arcsine squareroot transformation, but I was unable to take the arcsine of the value 1
-  when the element is part of a differentiable array.  Accordingly, I had to subtract a tiny number (5.e-8) from the observed 
-  and predicted FH so that I could still take the arcsine of the element even if the predicted FH value == 1, but I was not
-  confortable with this modification.
+       resid_catch(area,spp) = log(obs_catch_biomass(area,spp)+o)-log(est_catch_biomass(area,spp)+o);
+       totcatch_fit(area,spp) = norm2(resid_catch(area,spp));
 
-  The function also calculates the likelihood components for each of the initial parameters that represent deviations from means (dYr1,
-  dAge1, and dFt).  The likelihood components for each of these parameters ensure that all species-specific deviations sum to zero.
-  */
+       resid_bio(area,spp) = log(obs_survey_biomass(area,spp)+o)-log(est_survey_biomass(area,spp)+o);
+       totbio_fit(area,spp) = norm2(resid_bio(area,spp));
+    }
+  }
+  //cout<<"resid_catch\n"<<resid_catch<<endl;
+  //cout<<"totcatch_fit\n"<<totcatch_fit<<endl;
+  //cout<<"totbio_fit\n"<<totbio_fit<<endl;
 
-   //Total commercial catch component
-       //init_matrix TotC(1,nsp,fyr,lyr);                //Total commercial catch; metric tons
-       //matrix TotC_hat(1,nsp,fyr,lyr);                //Total commerical catch *in weight*; summed over ages
-       //dvar_vector TCres(1,nsp);
-  TCres.initialize();                                          //Lognormal distribution
+  objfun_areaspp = totcatch_fit + totbio_fit;
+  //cout<<"objfun_areaspp\n"<<objfun_areaspp<<endl;
 
-   //Catch-at-age proportions component
-       //3darray Cprop(1,nsp,fyr,lyr,1,nage);        //Proportion-at-age of the commercical catch, CAA
-       //3darray Cprop_hat(1,nsp,fyr,lyr,1,nage);  //Commercial catch proportions-at-age
-       //dvar_vector CPmulti(1,nsp);
-  CPmulti.initialize();                                        //Multinomial distribution
+  objfun = sum(objfun_areaspp);
 
-  //Total survey catch component
-      //3darray TotFIC(1,nsp,1,nFIC,fyr,lyr);        //Sum of observed FIC  
-      //3darray TotFIC_hat(1,nsp,1,nFIC,fyr,lyr); //Total survey (FIC) catch in number/tow; summed over ages
-      //matrix TSresA(1,nsp,1,nFIC);      //Objective function component: Total survey catch, method A
-      //matrix TSresB(1,nsp,1,nFIC);      //Objective function component: Total survey catch, method B
-  TSresA.initialize();  TSresB.initialize();           //Lognormal distribution
-
-  //FIC, Survey catch-at-age proportions component
-      //init_3darray sumFIC(1,nsp,1,nFIC,fyr,lyr); //Sum of observed FIC  
-      //3darray Sprop(1,nsp,fyr,lyr,1,nage);           //Proportion-at-age of the survey catch, FIC
-      //3darray Sprop_hat(1,nsp,fyr,lyr,1,nage);    //Survey catch proportions-at-age
-  SPmulti.initialize();                                         //Multinomial distribution
-
-  //Food habits component
-      //init_4darray FH(1,nsp2,1,nbins,1,nage,1,nsp2+1);  //Observed FH, proportions by wt
-      //4darray FH_hat(1,nsp2,1,nbins,1,nage,1,nsp2+1);  //Predicted FH, summed over all prey ages, and including OFood
-      //dvar_vector FHmulti(1,nsp);
-  FHmulti.initialize();                                          //Multinomial distribution
-
-  //Penalties
-  tBpen.initialize();                                           //Total Biomass penalty for each species
-  tYpen.initialize();                                          //Total Yr1 penalty for each species
-  tRpen.initialize();                                           //Total Recruitment penalty for each species
-  tOpen = 0;                                                   //Total Other Food penalty
-
-  //Deviations component
-      //init_bounded_matrix dYr1(1,nsp,1,nage,-5,5,2);        //Age-specific deviations in Year 1 N's, log space
-      //init_bounded_matrix dAge1(1,nsp,fyr+1,lyr,-5,5,2);   //Annual deviations in recruits, log space
-      //init_bounded_matrix dFt(1,nsp,1,nFt,-5,5,2);             //Annual deviations in species-specific fishing mortality rates in yrs where TotC > 0
-  Devs.initialize();
-
-  //Total objective function value, some species-specific;
-  ofvsp.initialize();  ofvsp_ideal.initialize();  ofv_ideal.initialize();
-
-  //****************************Need to add loop for areas**************************** // JMB
-  //Species loop for each likelihood component
-  for (spp = 1; spp<=Nspecies; spp++)
-    {
-
-    //Total commercial catch component
-    TCresid(spp) = log(obs_catch_biomass(spp)+o) - log(TotC_hat(spp)+o);
-    TCres(spp) = TCwt(spp) *norm2(TCresid(spp));
-      /* ******In future datasets, double check to make sure TotC and TotC_hat units are the same! --
-            Best way to check is to make sure the numbers are of the same order of magnitude!******* */
-    if (debug == 62) {cout<<"TotC_hat\n"<<TotC_hat(spp)+o<<endl<<"log TotC_hat\n"<<log(TotC_hat(spp)+o)<<endl;}
-    if (debug == 60) {cout<<"Completed lognormal TotC,  sp="<<spp<<endl;}
-
-    //Total survey catch component; two possible ways to calculate TotFIC residuals
-    //B
-    TSresid(spp) = log(obs_survey_biomass(spp)+o) - log(TotFIC_hat(spp)+o);
-//    for (j=1; j<=nFIC; j++)
-//      {
-//      //A
-//      TSresA(i)(j) = TSwt(i)(j) *norm2(toteps(i)(j));
-//      //B
-//      TSresB(i)(j) = TSwt(i)(j) *norm2(TSresid(i)(j));
-//      }  //end of nFIC loop
-    if (debug == 62) {cout<<"TotFIC_hat\n"<<TotFIC_hat(spp)+o<<endl<<"log TotFIC_hat\n"<<log(TotFIC_hat(spp)+o)<<endl;}
-    if (debug == 60) {cout<<"Completed lognormal TotFIC,  sp="<<spp<<endl;}
-    
-    for (yr = 1; yr<=Nyrs; yr++)
-      {
-
-      //Catch-at-age proportions component
-      if (sumC(spp,yr) != 0)  //only calculate CPmulti if sum of obs CAA > 0, i.e. if age samples were taken in a particular year
-        {
-        //Multinomial distribution
-        dvar_vector CPvec = CPwt(spp) *elem_prod( Cprop(spp,yr)+p, log(Cprop_hat(spp,yr)+p) );
-          //It does not matter if CPwt is in- or outisde of the summation
-        CPmulti(spp) -= sum(CPvec);
-        if (debug == 63) {cout<<"yr: "<<yr<<endl
-                              <<"Cprop_hat\n"<<Cprop_hat(spp,yr)+p<<endl<<"log Cprop_hat\n"<<log(Cprop_hat(spp,yr)+p)<<endl;}
-        }  //end of CAA proportions component
-      if (debug == 61) {cout<<"Completed multinomial Cprop,  sp="<<spp<<"  yr="<<yr<<endl;}
-
-//      //Survey catch-at-age proportions component
-//      for (j=1; j<=nFIC; j++)
-//        {
-//        int bage = FICfage(i,j);
-//        int eage = FIClage(i,j);
-//        if (sumFIC(i,j,t) != 0)
-//          {
-//          //Multinomial distribution
-//          dvar_vector SPvec = SPwt(i)(j) *elem_prod( Sprop(i,j,t).sub(bage,eage)+p,log(Sprop_hat(i,j,t).sub(bage,eage)+p) );
-//          SPmulti(i,j) -= sum(SPvec);
-//          if (debug == 64) {cout<<"t: "<<j<<"  j: "<<t<<endl
-//                                           <<"Sprop_hat\n"<<Sprop_hat(i,j,t)+p<<endl<<"log Sprop_hat\n"<<log(Sprop_hat(i,j,t)+p)<<endl;}
-//          }  //end of FIC proportions component
-//        }  //end of nFIC loop
-//      if (debug == 61) {cout<<"Completed multinomial Sprop,  sp="<<i<<"  yr="<<t<<endl;}
-
-      }  //end of year loop
-    if (debug == 60) {cout<<"Completed multinomial Cprop and Sprop,  sp="<<spp<<endl;}
-
-    //Food habits, proportion by weight, component
-    if (trophic && rhosp(i) > 0) 
-//      {
-//      for (b=1; b<=nbins; b++)
-//        {
-//        for (pdA = 1; pdA<=nage(i); pdA++)
-//          {
-//          if (sum(FH(i,b,pdA))<=100)    //Rows of missing data are marked with 9999, making the rowsum >> 100
-//            {
-//            //Multinomial distribution
-//            dvar_vector FHvec = FHwt(i) *elem_prod( FH(i,b,pdA)+p , log(FH_hat(i,b,pdA)+p) );
-//            FHmulti(i) -= sum(FHvec);
-//            if (debug == 65) {cout<<"b: "<<b<<"  pdA: "<<pdA<<endl
-//                                           <<"FH_hat\n"<<(FH_hat(i,b,pdA)+p)<<endl<<"log FH_hat\n"<<log(FH_hat(i,b,pdA)+p)<<endl;}
-//            }  //end of sum(FH) If Statement
-//          }  //end of predator age loop
-//        }  //end of FH bin loop
-//      }  //end of trophic If statement
-//    if (debug == 60) {cout<<"Completed multinomial FH,  sp="<<i<<endl;}
-//
-//    //Putting all of the likelihood components together
-//    //Commercial and survey catch data
-//    ofvsp_ideal(i) = TCres(i) + (CPmulti(i) - CPideal(i)) + sum(TSresA(i)) + sum( (SPmulti(i) - SPideal(i)) );
-//    ofvsp(i) = TCres(i) + CPmulti(i) + sum(TSresA(i)) + sum(SPmulti(i));
-//    //Food habits data only included if 1) trophic interactions are turned on, and 2) the species conumes other species in the model
-//      //From data section, rhosp(i,nsp) indicates whether a species is ever a predator
-//    if (trophic) {
-//      ofvsp_ideal(i) += FHmulti(i) - FHideal(i);
-//      ofvsp(i) += FHmulti(i);  }  //end of Trophic If statement
-
-    }  //end of species loop
-
-  //Penalty terms
-  tBpen = elem_prod(Bwt,Bpen);        //Total biomass penalty for each species
-  tYpen = elem_prod(Ywt,Ypen);        //Total Yr1 penalty for each species
-  tRpen = elem_prod(Rwt,Rpen);        //Total recruitment penalty for each species
-  tOpen = Owt*Open;                        //Total Other Food penalty
-
-
-  //*****************************Need to add loop for areas***********************************
-  //Diagnostics for biomass and other food penalty terms
-  for (spp=1; spp<=Nspecies; spp++)
-    {
-    if(Bpen(spp)> 0 ) {
-    nBpen(spp)++;  lBpen(spp) = 1;  //JMB - instead of declare nf in the data, I am just using the hard coded value that Kiersten set it to
-    cout<<"\nSpecies: "<<spp<<"  B penalty = "<<Bpen(spp)<<"  tBpen =  "<<tBpen(spp)<<"  nBpen = "<<nBpen(spp)<<endl;}
-    }  //end of species loop
-  if(Open > 0)  {
-    nOpen++;  lOpen = 1;
-    cout<<"OF penalty = "<<Open<<"  tOpen =  "<<tOpen<<"  nOpen = "<<nOpen<<endl;  }
-
-  //Deviation terms
-  Devs = 1.e6*( square(rowsum(dAge1)) + square(rowsum(dFt)) );
-  if (debug == 66 && sum(Devs) > 0.001) {
-    cout<<"Age1 devs: "<<square(rowsum(dAge1))<<endl<<"Ft devs: "<<square(rowsum(dFt))<<endl<<endl; }
-
-  //Total objective function value
-  ofv = sum(ofvsp)                   + sum(tBpen) + sum(tYpen) + sum(tRpen) + tOpen + sum(Devs);
-  ofv_ideal = sum(ofvsp_ideal) + sum(tBpen) + sum(tYpen) + sum(tRpen) + tOpen + sum(Devs);
-
-//************************************* End reworking MS-SCAA objective function **************************** //JMB
+  cout << "Object function value:" << objfun << endl;
+  ofstream out_objective_val("objective_val.dat",ios::app);
+  out_objective_val << objfun << endl;
   
 //=======================================================================================
 RUNTIME_SECTION
 //=======================================================================================
   convergence_criteria 1.e-3 ,  1.e-4
-  maximum_function_evaluations 10
+  maximum_function_evaluations 1000
 
 //=======================================================================================
 TOP_OF_MAIN_SECTION
