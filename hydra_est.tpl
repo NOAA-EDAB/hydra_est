@@ -564,6 +564,32 @@ DATA_SECTION
   init_5darray obs_catch_lengths(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs,1,Nsizebins)
   //init_4darray obs_survey_lengths(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)   
   init_int eof3  //End of file flag for second data file
+  4darray obs_sumC(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs)   //Sum of observed catch-at-length
+  5darray obs_Cprop(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs,1,Nsizebins);  //Proportion-at-length of the observed catch
+  //Calculate the sum of observed catch-at-length and observed catch proportions
+  !!for (area = 1; area<=Nareas; area++){
+  !!    for(spp = 1; spp<=Nspecies; spp++){
+  !!            for(fleet = 1; fleet<=Nfleets; fleet++){
+  !!             obs_sumC(area,spp,fleet) = rowsum(obs_catch_lengths(area,spp,fleet));
+  !!             for(yr = 1; yr<=Nyrs; yr++){
+  !!                    if (obs_sumC(area,spp,fleet,yr) != 0) {obs_Cprop(area)(spp)(fleet)(yr) = obs_catch_lengths(area)(spp)(fleet)(yr)/obs_sumC(area)(spp)(fleet)(yr);}       
+  !!             }//Years
+  !!           }//Fleets
+  !!         }//Species
+  !!       }//Area
+
+
+//  !!cout << "sumC" << endl;
+//  !!cout << sumC << endl;
+//  !!cout << " " << endl;
+//  !!cout << "observed catch lengths" << endl;
+//  !!cout << obs_catch_lengths << endl;
+//  !!cout << "Catch proportions by fleet" << endl;
+//  !!cout << Cprop << endl;
+//  !!exit(4321);
+  
+
+
 
 //debugging section, check inputs and initial calculations
 	LOCAL_CALCS
@@ -839,6 +865,11 @@ PARAMETER_SECTION
   3darray TCresid(1,Nareas,1,Nspecies,1,Nyrs);       //Residuals of total commercial catch *in weight*; summed over ages //JMB
   3darray TotC_hat(1,Nareas,1,Nspecies,1,Nyrs);     //Total commerical catch *in weight*; summed over ages //JMB - added areas
   4darray C_hat(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins);        //Predicted commercial catch-at-age // JMB - added areas
+//JMB - Components to calculate the catch proportions component of the likelihood function
+  4darray est_sumC(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs)   //Sum of observed catch-at-length
+  5darray est_Cprop(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs,1,Nsizebins);  //Proportion-at-length of the observed catch
+
+
 
 //From Sarah's objective function
   matrix objfun_areaspp(1,Nareas,1,Nspecies) //sum over components for area and species
@@ -1509,7 +1540,6 @@ FUNCTION calc_catch_etc
     }//end species loop
   }//end area loop
 
-
  // aggregate catch to guild level at end of year Andy Beet
  // also calculate predation rate and fishingRate
    if ((t % Nstepsyr == 0) && (yrct <= Nyrs)){
@@ -1546,6 +1576,26 @@ FUNCTION calc_catch_etc
    }
   } // end if t%
 
+//JMB - Calculate the sum of estimated catch-at-length and estimated catch proportions
+  for (area = 1; area<=Nareas; area++){
+      for(spp = 1; spp<=Nspecies; spp++){
+              for(fleet = 1; fleet<=Nfleets; fleet++){
+               est_sumC(area,spp,fleet) = rowsum(Cfl_tot(area,spp,fleet));
+               for(yr = 1; yr<=Nyrs; yr++){
+                      if (est_sumC(area,spp,fleet,yr) != 0) {est_Cprop(area)(spp)(fleet)(yr) = Cfl_tot(area)(spp)(fleet)(yr)/est_sumC(area)(spp)(fleet)(yr);}       
+               }//Years
+             }//Fleets
+           }//Species
+         }//Area
+//  cout << "Z" << endl;
+//  cout << Z << endl;
+//  cout << "Cfl_tot" << endl;
+//  cout << Cfl_tot << endl;
+//  cout << "est_sumC" << endl;
+//  cout << est_sumC << endl;
+//  cout << "est_Cprop" << endl;
+//  cout << est_Cprop << endl;
+//  exit(54321);
  
 //----------------------------------------------------------------------------------------
 FUNCTION calc_pop_dynamics
@@ -1991,12 +2041,12 @@ FUNCTION evaluate_the_objective_function
    
        //Catch-at-length proportions component
        //catchcomp_fit(area,spp) =  //fit to catch at length composition
-       for (int ifleet=1;ifleet<=Nfleets;ifleet++){      
+       for (int fleet=1;fleet<=Nfleets;fleet++){      
          for (yr = 1; yr<=Nyrs; yr++)
         {
         //Multinomial distribution
-        dvar_vector CPvec = CPwt(spp) *elem_prod(obs_catch_lengths(area,spp,ifleet,yr)+p, log(Cfl_tot(area,spp,ifleet,yr)+p) );
-        catchcomp_fl_fit(area,spp,ifleet) -= sum(CPvec);      
+        dvar_vector CPvec = CPwt(spp) *elem_prod(obs_Cprop(area,spp,fleet,yr)+p, log(est_Cprop(area,spp,fleet,yr)+p) );
+        catchcomp_fl_fit(area,spp,fleet) -= sum(CPvec);      
         }//End year loop
        }//End fleet loop -   //end of CAA proportions component
 
@@ -2005,6 +2055,19 @@ FUNCTION evaluate_the_objective_function
     } //end species loop
   } //end area loop
 
+//
+//  cout << "Z" << endl;
+//  cout << Z << endl;
+//  cout << "Cfl_tot" << endl;
+//  cout << Cfl_tot << endl;
+//  cout << "est_sumC" << endl;
+//  cout << est_sumC << endl;
+//  cout << "est_Cprop" << endl;
+//  cout << est_Cprop << endl;
+//  cout << "catchcomp_fl_fit" << endl;
+//  cout << catchcomp_fl_fit << endl;
+//  exit(54321);
+//
   ofstream estcomout("estimated_catch_lengths.csv");
 //      estcomout<<"#Estimated Catch-at-Length"<<endl;
       estcomout <<", Bin_1, Bin_2, Bin_3, Bin_4, Bin_5"<< endl;
