@@ -560,9 +560,9 @@ DATA_SECTION
 
 
   //Read in third data file - catch-at-length data --JMB
-  !!ad_comm::change_datafile_name("JMB_C.dat");
-  init_4darray obs_catch_lengths(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) 
-  init_4darray obs_survey_lengths(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)   
+  !!ad_comm::change_datafile_name("Observed_data_new.dat");
+  init_5darray obs_catch_lengths(1,Nareas,1,Nspecies,1,Nfleets,1,Nyrs,1,Nsizebins)
+  //init_4darray obs_survey_lengths(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)   
   init_int eof3  //End of file flag for second data file
 
 //debugging section, check inputs and initial calculations
@@ -801,6 +801,7 @@ PARAMETER_SECTION
   matrix totcatch_fit(1,Nareas,1,Nspecies)  //fit to total catch in weight by area and species
   matrix totbio_fit(1,Nareas,1,Nspecies)    //fit to total survey biomass by area and species
   matrix catchcomp_fit(1,Nareas,1,Nspecies) //fit to catch at length composition
+  3darray catchcomp_fl_fit(1,Nareas,1,Nspecies,1,Nfleets) //fit to catch at length composition
   matrix biocomp_fit(1,Nareas,1,Nspecies)   //fit to survey catch at length composition
   //matrix agelencomp_fit(1,Nareas,1,Nspecies) //fit to age at length composition, where available
 
@@ -1634,7 +1635,7 @@ FUNCTION calc_survey_abundance
   	for(spp=1; spp<=Nspecies; spp++){
 	   avByr(area,spp)(yrct) += sum(B(area,spp,t))/Nstepsyr;
        est_survey_biomass(area,spp,yrct) =  avByr(area,spp,yrct)*survey_q(area,spp); //add surv q
-       est_survey_biomass(area,spp,yrct) *= exp(surv_sigma(area,spp)
+       est_survey_biomass(area,spp,yrct) *= exp(surv_sigma(area,spp) 
                                          * surv_obsError(area,spp,yrct)
                                          - 0.5 * surv_sigma(area,spp) * surv_sigma(area,spp)  ); //add obs error
 
@@ -1977,7 +1978,7 @@ FUNCTION evaluate_the_objective_function
    catchcomp_fit.initialize();
    objfun_areaspp.initialize();
 
-  for (area=1; area<=Nareas; area++){   
+  for (area=1; area<=Nareas; area++){
   	for(spp=1; spp<=Nspecies; spp++){   
 
        //Total Commercial Catch in Biomass 
@@ -1987,15 +1988,17 @@ FUNCTION evaluate_the_objective_function
        //Total Survey Catch in Biomass
        resid_bio(area,spp) = log(obs_survey_biomass(area,spp)+o)-log(est_survey_biomass(area,spp)+o);
        totbio_fit(area,spp) = TSwt(spp) + norm2(resid_bio(area,spp)); //JMB - Added weighting factor
-      
+   
        //Catch-at-length proportions component
        //catchcomp_fit(area,spp) =  //fit to catch at length composition
-        for (yr = 1; yr<=Nyrs; yr++)
+       for (int ifleet=1;ifleet<=Nfleets;ifleet++){      
+         for (yr = 1; yr<=Nyrs; yr++)
         {
         //Multinomial distribution
-        dvar_vector CPvec = CPwt(spp) *elem_prod(obs_catch_lengths(area,spp,yr)+p, log(C_tot(area,spp,yr)+p) );
-       catchcomp_fit(area,spp) -= sum(CPvec);
-        }  //end of CAA proportions component
+        dvar_vector CPvec = CPwt(spp) *elem_prod(obs_catch_lengths(area,spp,ifleet,yr)+p, log(Cfl_tot(area,spp,ifleet,yr)+p) );
+        catchcomp_fl_fit(area,spp,ifleet) -= sum(CPvec);      
+        }//End year loop
+       }//End fleet loop -   //end of CAA proportions component
 
        //biocomp_fit   //fit to survey catch at length composition
 
@@ -2007,40 +2010,112 @@ FUNCTION evaluate_the_objective_function
       estcomout <<", Bin_1, Bin_2, Bin_3, Bin_4, Bin_5"<< endl;
       for (area=1; area<=Nareas; area++){
    	    for(spp=1; spp<=Nspecies; spp++){
+                   for (int ifleet=1;ifleet<=Nfleets;ifleet++){
 //                       estcomout<<"#species_"<<spp <<endl;
                        for(yr=1; yr<=Nyrs; yr++){
                                  for(size=1; size<=Nsizebins; size++){
-                                     estcomout<<","<<C_tot(area,spp,yr,size);
+                                     estcomout<<","<<Cfl_tot(area,spp,ifleet,yr,size);
                                      }  estcomout<< endl;  //Size bins
-          } //Years
-        }  //Species
-      }    //Area
+            } //Years                         
+          } //Fleet
+           //estcomout<<"#species_"<<spp <<" ends here" <<endl;
+        } //Species
+      } //Area
 
   ofstream obscomout("observed_catch_lengths.csv");
 //      obscomout<<"#Observed Catch-at-Length"<<endl;
       obscomout <<", Bin_1, Bin_2, Bin_3, Bin_4, Bin_5"<< endl;
       for (area=1; area<=Nareas; area++){
    	    for(spp=1; spp<=Nspecies; spp++){
+                   for (int ifleet=1;ifleet<=Nfleets;ifleet++){            
 //                       obscomout<<"#species_"<<spp <<endl;
                        for(yr=1; yr<=Nyrs; yr++){
                                  for(size=1; size<=Nsizebins; size++){
-                                     obscomout<<","<<obs_catch_lengths(area,spp,yr,size);
+                                     obscomout<<","<<obs_catch_lengths(area,spp,ifleet,yr,size);
                                      }  obscomout<<endl;  //Size bins
-          }       // Years
+            } //Years                         
+          } //Fleet
+        } //Species
+      } //Area
+
+
+  ofstream estcombioout("estimated_catch_biomass.csv");
+//      estcomout<<"#Estimated Catch-at-Length"<<endl;
+      for (area=1; area<=Nareas; area++){
+   	    for(spp=1; spp<=Nspecies; spp++){
+//                       estcombioout<<"#species_"<<spp <<endl;
+                       for(yr=1; yr<=Nyrs; yr++){
+                                     estcombioout<<","<<est_catch_biomass(area,spp,yr);
+                                     }  estcombioout<< endl;  //Years
+        }  //Species
+      }    //Area
+
+  ofstream obscombioout("observed_catch_biomass.csv");
+//      obscomout<<"#Observed Catch-at-Length"<<endl;
+      for (area=1; area<=Nareas; area++){
+   	    for(spp=1; spp<=Nspecies; spp++){
+//                       obscombioout<<"#species_"<<spp <<endl;
+                       for(yr=1; yr<=Nyrs; yr++){
+                                     obscombioout<<","<<obs_catch_biomass(area,spp,yr);
+                                     }  obscombioout<<endl;  //Years
         }       // Species
       }         //Area
+
+
+
+  ofstream estsurbioout("estimated_survey_biomass.csv");
+//      estcomout<<"#Estimated Catch-at-Length"<<endl;
+      for (area=1; area<=Nareas; area++){
+   	    for(spp=1; spp<=Nspecies; spp++){
+//                       estsurbioout<<"#species_"<<spp <<endl;
+                       for(yr=1; yr<=Nyrs; yr++){
+                                     estsurbioout<<","<<est_survey_biomass(area,spp,yr);
+                                     }  estsurbioout<< endl;  //Years
+        }  //Species
+      }    //Area
+
+  ofstream obssurbioout("observed_survey_biomass.csv");
+//      obscomout<<"#Observed Catch-at-Length"<<endl;
+      for (area=1; area<=Nareas; area++){
+   	    for(spp=1; spp<=Nspecies; spp++){
+//                       obssurbioout<<"#species_"<<spp <<endl;
+                       for(yr=1; yr<=Nyrs; yr++){
+                                     obssurbioout<<","<<obs_survey_biomass(area,spp,yr);
+                                     }  obssurbioout<<endl;  //Years
+        }       // Species
+      }         //Area
+
+
+
+
+
+
+
+
+
+
 
 
   //cout<<"resid_catch\n"<<resid_catch<<endl;
   //cout<<"totcatch_fit\n"<<totcatch_fit<<endl;
   //cout<<"totbio_fit\n"<<totbio_fit<<endl;
-
+  cout << "Fleet Catch Component" << endl;
+  cout << catchcomp_fl_fit << endl;
+  for (area=1; area<=Nareas; area++){
+    for(spp=1; spp<=Nspecies; spp++){
+      catchcomp_fit(area,spp) = sum(catchcomp_fl_fit(area,spp));
+    }
+  }
   objfun_areaspp = totcatch_fit + totbio_fit + catchcomp_fit;
   cout<<"objfun_areaspp\n"<<objfun_areaspp<<endl;
-  exit(999);
-//  objfun = sum(objfun_areaspp);
 
-//  cout << "Object function value:" << objfun << endl;
+  //cout << "est_catch_biomass" << endl;
+  //cout << est_catch_biomass << endl;
+  //exit(999);
+  
+  objfun = sum(objfun_areaspp);
+
+  cout << "Object function value:" << objfun << endl;
 //  ofstream out_objective_val("objective_val.dat",ios::app);
 //  out_objective_val << objfun << endl;
   
