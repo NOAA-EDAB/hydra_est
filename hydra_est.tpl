@@ -554,11 +554,16 @@ DATA_SECTION
   init_vector FHwt(1,Nspecies)	      //Food habits proportions by weight
   init_vector Bthres(1,Nspecies)      //Biomass threshold used in penalty function to avoid B == 0 (crash)
   init_vector Rthres(1,Nspecies)      //Threshold for the coefficient of variation of recruitment
-  init_matrix TSwt(1,Nspecies,1,nFIC) //Total annual survey catch in number/tow
-  init_matrix SPwt(1,Nspecies,1,nFIC) //Survey catch proportions-at-age
+  init_vector TSwt(1,Nspecies) //Total annual survey catch in number/tow
+  init_vector SPwt(1,Nspecies) //Survey catch proportions-at-age
   init_int eof2                       //End of file flag for second data file
 
 
+  //Read in third data file - catch-at-length data --JMB
+  !!ad_comm::change_datafile_name("JMB_C.dat");
+  init_4darray obs_catch_lengths(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins) 
+  init_4darray obs_survey_lengths(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins)   
+  init_int eof3  //End of file flag for second data file
 
 //debugging section, check inputs and initial calculations
 	LOCAL_CALCS
@@ -794,8 +799,8 @@ PARAMETER_SECTION
   3darray resid_catch(1,Nareas,1,Nspecies,1,Nyrs)   //log(obs)-log(est) catch
   3darray resid_bio(1,Nareas,1,Nspecies,1,Nyrs)     //log(obs)-log(est) survey bio
   matrix totcatch_fit(1,Nareas,1,Nspecies)  //fit to total catch in weight by area and species
-  matrix catchcomp_fit(1,Nareas,1,Nspecies) //fit to catch at length composition
   matrix totbio_fit(1,Nareas,1,Nspecies)    //fit to total survey biomass by area and species
+  matrix catchcomp_fit(1,Nareas,1,Nspecies) //fit to catch at length composition
   matrix biocomp_fit(1,Nareas,1,Nspecies)   //fit to survey catch at length composition
   //matrix agelencomp_fit(1,Nareas,1,Nspecies) //fit to age at length composition, where available
 
@@ -828,6 +833,13 @@ PARAMETER_SECTION
   matrix index_SystemExploitationRate(1,Nareas,1,Nyrs) // system exploitation rate
   matrix  exploitation_update(1,Nareas,1,Nyrs) // changing exploitation rate
 
+//JMB - Parameters for total commercial catch component of objective function (TCresid/TCres)
+  vector TCres(1,Nspecies);     //Objective function component: Total commercial catch //JMB
+  3darray TCresid(1,Nareas,1,Nspecies,1,Nyrs);       //Residuals of total commercial catch *in weight*; summed over ages //JMB
+  3darray TotC_hat(1,Nareas,1,Nspecies,1,Nyrs);     //Total commerical catch *in weight*; summed over ages //JMB - added areas
+  4darray C_hat(1,Nareas,1,Nspecies,1,Nyrs,1,Nsizebins);        //Predicted commercial catch-at-age // JMB - added areas
+
+//From Sarah's objective function
   matrix objfun_areaspp(1,Nareas,1,Nspecies) //sum over components for area and species
 
   objective_function_value objfun
@@ -897,7 +909,7 @@ PROCEDURE_SECTION
 
                 calc_survey_abundance();  if (debug == 4) {cout<<"completed Survey Abundance"<<endl;}
 
-                calc_health_indices();  if (debug == 4) {cout<<"completed Survey Abundance"<<endl;}
+                calc_health_indices();  if (debug == 4) {cout<<"completed Health Indices"<<endl;}
 
                 // enter assessment module if turned on in data file, if end of year, if curent year is a multiple of assessmentPeriod
                 if (AssessmentOn == 1) {
@@ -1099,9 +1111,15 @@ FUNCTION calc_initial_states
   index_stdev_catch.initialize();
   index_stdev_biomass.initialize();
 
-
   totcatch_fit.initialize(); catchcomp_fit.initialize();
   totbio_fit.initialize(); biocomp_fit.initialize();
+
+//JMB
+  C_hat.initialize();
+  //Bpen.initialize();
+  //Ypen.initialize();
+  //Rpen.initialize();
+  //Open.initialize();
 
   //need year 1 N to do recruitment, pred mort, N for following years
   for (area=1; area<=Nareas; area++){
@@ -1443,14 +1461,14 @@ FUNCTION calc_catch_etc
          C(area,spp,t) = 0.0;
       }
 
-          
-      // check to see if species part of a guild in trouble. if so set catch to discards and catch(landings) = 0
-      //      Default flag:  all = 0
-      if (catchToDiscardsGuild(area,guildMembers(spp)) == 1) {
-         // this species is a member of a guild whose guild biomass has exceeded threshold
-        discardN(area,spp,t) =  discardN(area,spp,t) + C(area,spp,t);
-        C(area,spp,t) = 0.0;
-      }
+      //JMB - error occurring here
+//      // check to see if species part of a guild in trouble. if so set catch to discards and catch(landings) = 0
+//      //      Default flag:  all = 0
+//      if (catchToDiscardsGuild(area,guildMembers(spp)) == 1) {
+//         // this species is a member of a guild whose guild biomass has exceeded threshold
+//        discardN(area,spp,t) =  discardN(area,spp,t) + C(area,spp,t);
+//        C(area,spp,t) = 0.0;
+//      }
 
       // size class level
       eaten_biomass_size(area,spp,yrct) += wtconv*elem_prod(eatN(area,spp,t),binavgwt(spp));
@@ -1623,7 +1641,7 @@ FUNCTION calc_survey_abundance
 
     }
   }
-
+ cout << est_survey_biomass << endl;
  // Added by Andy Beet
  // we need to sum up the biomass over each guild and check for excedences.
  // Do at end of year only. Used in assessment module and health indices module
@@ -1929,6 +1947,26 @@ FUNCTION write_simout
 FUNCTION evaluate_the_objective_function
 //----------------------------------------------------------------------------------------
 
+  //New objective function adapted from MS-SCA -- JMB
+  //TCres.initialize();    //Total commercial catch component
+  //CPmulti.initialize();  //Catch-at-age proportions component
+  //TSresA.initialize();   //Total survey catch component - option A
+  //TSresB.initialize();   //Total survey catch component - option B
+  //SPmulti.initialize();  //Survey catch-at-age proportions component
+  //FHmulti.initialize();  //Food habits component
+  //Penalties
+    //tBpen.initialize();  //Total Biomass penalty for each species
+    //tYpen.initialize();  //Total Yr1 penalty for each species
+    //tRpen.initialize();  //Total Recruitment penalty for each species
+    //tOpen = 0;
+  //Deviations component
+    //Devs.initialize();
+  //Total objective function value, some species-specific;
+    //ofvsp.initialize();
+    //ofvsp_ideal.initialize();
+    //ofv_ideal.initialize();
+
+//Original placeholder by S. Gaichas, updated by J. Boucher
   //est and observed survey biomass and fishery catch are 3darrays(area,spp,yr)
   //fit matrices are area by spp
 
@@ -1936,30 +1974,75 @@ FUNCTION evaluate_the_objective_function
    resid_bio.initialize();
    totcatch_fit.initialize();
    totbio_fit.initialize();
+   catchcomp_fit.initialize();
    objfun_areaspp.initialize();
 
-  for (area=1; area<=Nareas; area++){
-  	for(spp=1; spp<=Nspecies; spp++){
+  for (area=1; area<=Nareas; area++){   
+  	for(spp=1; spp<=Nspecies; spp++){   
 
+       //Total Commercial Catch in Biomass 
        resid_catch(area,spp) = log(obs_catch_biomass(area,spp)+o)-log(est_catch_biomass(area,spp)+o);
-       totcatch_fit(area,spp) = norm2(resid_catch(area,spp));
+       totcatch_fit(area,spp) = TCwt(spp) + norm2(resid_catch(area,spp)); //JMB - Added weighting factor
 
+       //Total Survey Catch in Biomass
        resid_bio(area,spp) = log(obs_survey_biomass(area,spp)+o)-log(est_survey_biomass(area,spp)+o);
-       totbio_fit(area,spp) = norm2(resid_bio(area,spp));
-    }
-  }
+       totbio_fit(area,spp) = TSwt(spp) + norm2(resid_bio(area,spp)); //JMB - Added weighting factor
+      
+       //Catch-at-length proportions component
+       //catchcomp_fit(area,spp) =  //fit to catch at length composition
+        for (yr = 1; yr<=Nyrs; yr++)
+        {
+        //Multinomial distribution
+        dvar_vector CPvec = CPwt(spp) *elem_prod(obs_catch_lengths(area,spp,yr)+p, log(C_tot(area,spp,yr)+p) );
+       catchcomp_fit(area,spp) -= sum(CPvec);
+        }  //end of CAA proportions component
+
+       //biocomp_fit   //fit to survey catch at length composition
+
+    } //end species loop
+  } //end area loop
+
+  ofstream estcomout("estimated_catch_lengths.csv");
+//      estcomout<<"#Estimated Catch-at-Length"<<endl;
+      estcomout <<", Bin_1, Bin_2, Bin_3, Bin_4, Bin_5"<< endl;
+      for (area=1; area<=Nareas; area++){
+   	    for(spp=1; spp<=Nspecies; spp++){
+//                       estcomout<<"#species_"<<spp <<endl;
+                       for(yr=1; yr<=Nyrs; yr++){
+                                 for(size=1; size<=Nsizebins; size++){
+                                     estcomout<<","<<C_tot(area,spp,yr,size);
+                                     }  estcomout<< endl;  //Size bins
+          } //Years
+        }  //Species
+      }    //Area
+
+  ofstream obscomout("observed_catch_lengths.csv");
+//      obscomout<<"#Observed Catch-at-Length"<<endl;
+      obscomout <<", Bin_1, Bin_2, Bin_3, Bin_4, Bin_5"<< endl;
+      for (area=1; area<=Nareas; area++){
+   	    for(spp=1; spp<=Nspecies; spp++){
+//                       obscomout<<"#species_"<<spp <<endl;
+                       for(yr=1; yr<=Nyrs; yr++){
+                                 for(size=1; size<=Nsizebins; size++){
+                                     obscomout<<","<<obs_catch_lengths(area,spp,yr,size);
+                                     }  obscomout<<endl;  //Size bins
+          }       // Years
+        }       // Species
+      }         //Area
+
+
   //cout<<"resid_catch\n"<<resid_catch<<endl;
   //cout<<"totcatch_fit\n"<<totcatch_fit<<endl;
   //cout<<"totbio_fit\n"<<totbio_fit<<endl;
 
-  objfun_areaspp = totcatch_fit + totbio_fit;
-  //cout<<"objfun_areaspp\n"<<objfun_areaspp<<endl;
+  objfun_areaspp = totcatch_fit + totbio_fit + catchcomp_fit;
+  cout<<"objfun_areaspp\n"<<objfun_areaspp<<endl;
+  exit(999);
+//  objfun = sum(objfun_areaspp);
 
-  objfun = sum(objfun_areaspp);
-
-  cout << "Object function value:" << objfun << endl;
-  ofstream out_objective_val("objective_val.dat",ios::app);
-  out_objective_val << objfun << endl;
+//  cout << "Object function value:" << objfun << endl;
+//  ofstream out_objective_val("objective_val.dat",ios::app);
+//  out_objective_val << objfun << endl;
   
 //=======================================================================================
 RUNTIME_SECTION
