@@ -51,7 +51,7 @@ GLOBALS_SECTION
 //  #include <morefun.cxx>
   #include "statsLib.h"
   ofstream simout("simout.csv");
-//  ofstream test("test.csv"); // for debugging only
+  ofstream test("test.csv"); // for debugging only
 
 //=======================================================================================
 DATA_SECTION
@@ -823,6 +823,10 @@ PROCEDURE_SECTION
 
                 calc_survey_abundance();  if (debug == 4) {cout<<"completed Survey Abundance"<<endl;}
 
+                calc_health_indices();  if (debug == 4) {cout<<"completed Survey Abundance"<<endl;}
+
+                calc_assessment_strategy(); if (debug == 4) {cout<<"completed calc_assessment_strategy"<<endl;}
+
 	 }
 
   if (debug == 4) {cout<<"completed timestep loop"<<endl;}
@@ -1469,6 +1473,168 @@ FUNCTION calc_survey_abundance
        }
    }
   } // end if t%
+
+
+//----------------------------------------------------------------------------------------
+FUNCTION calc_health_indices
+//----------------------------------------------------------------------------------------
+// Here we calculate several indices: measures of system health at the end of the year
+
+ if ((t % Nstepsyr == 0) && (yrct <= Nyrs)){
+
+// note: we could combine these indices into the same loop, but chose not to ease readability
+// 1. Simpsons Diversity Index (Richness (number of species) and evenness(relative numbers)) = sum((N_i/N)^2) = sum(p_i^2)
+//  we use the  mean N over Nstepsyr as the annual value of N
+
+   for(int iarea=1;iarea<=Nareas;iarea++){
+      prob_species.initialize();
+      dvariable N_total = 0;
+      for (int isp=1; isp<=Nspecies;isp++) {
+        prob_species(isp) = pow(sum(N_tot(iarea,isp,yrct))/Nstepsyr,2);
+        N_total += sum(N_tot(iarea,isp,yrct))/Nstepsyr;
+      }
+      index_Simpsons(iarea,yrct) = sum(prob_species)/pow(N_total,2);
+   }
+// 2. Large Fish Index
+//  i. LFI_Biomass = %biomass of largest sizeclass relative to total biomass for each species
+// ii. LFI_Catch = same for catch data
+//iii. LFI_N = number of large fish
+   for (int iarea=1;iarea<=Nareas;iarea++) {
+//       LF_Biomass = 0;
+       for (int isp=1; isp<=Nspecies;isp++) {
+          index_LFI_Biomass(iarea,isp,yrct) = B_tot(iarea,isp,yrct,Nsizebins)/sum(B_tot(iarea,isp,yrct)); // large fish in top size category for each fish. Biomass
+          index_LFI_Catch(iarea,isp,yrct) = C_tot(iarea,isp,yrct,Nsizebins)/sum(C_tot(iarea,isp,yrct)); // large fish in top size category for each fish. Catch
+          index_LFI_N(iarea,isp,yrct) = N_tot(iarea,isp,yrct,Nsizebins)/Nstepsyr; // number of large fish per year
+       }
+   }
+
+  } // end of year if
+
+
+
+//----------------------------------------------------------------------------------------
+FUNCTION calc_assessment_strategy
+//----------------------------------------------------------------------------------------
+
+ if (AssessmentOn == 1) {
+
+ // if end of year and enough years have passed to perform average.
+ // every AssessmentPeriod we monitor stocks and adjust the effort for the future
+
+  if ((t % Nstepsyr == 0) && (yrct <= (Nyrs-AssessmentPeriod))) {
+    if( yrct % AssessmentPeriod == 0) {
+       // We enter this loop every AssessmentPeriod years, at the last time period of the year.
+      // now average the guild biomass values over AssessmentPeriod yrs and then we check to see if the levels exceed some threshhold
+     for (area=1 ; area<=Nareas; area++) {
+         for (iguild=1; iguild<=Nguilds; iguild++) {
+             maxGuildThreshold(area,iguild) = Nthresholds; // set all to maximum worst case is that no change is made to effort
+             for (iassess=1; iassess<=AssessmentPeriod;iassess++){
+                  // calculate the mean biomass and catch over the Assessment period
+                  est_survey_guild_biomass_assessment(area,iguild,yrct) += est_survey_guild_biomass(area,iguild,yrct-iassess+1)/AssessmentPeriod;
+                  for (int ifleet=1;ifleet<=Nfleets;ifleet++) {// catch by fleet over last AssessmentPeriod Years
+                      est_fleet_catch_guild_assessment(area,iguild,ifleet,yrct) += est_fleet_catch_guild_biomass(area,iguild,ifleet,yrct-iassess+1)/AssessmentPeriod;
+                  }
+             }
+             // check to see if average < threshold (threshold_proportion * biomass at equilibrium)
+             for (ithreshold=1; ithreshold<=Nthresholds; ithreshold++) {
+             // test<<yrct<<","<<iguild<<","<<ithreshold<<endl;
+                 if ((est_survey_guild_biomass_assessment(area,iguild,yrct)/B0_guilds(area,iguild)) <= threshold_proportion(ithreshold)) {
+                   // test << est_survey_guild_biomass_assessment(area,iguild,yrct)/B0_guilds(area,iguild)<<endl;
+
+                    maxGuildThreshold(area,iguild) = ithreshold;
+                    // dont need to keep going for this guild since we've found the most severe case
+                    break;
+                  }
+
+              }// threshold loop
+         } // guild loop
+     }  // area loop
+
+     // we do the same thing but check for exceedances at the species level also
+     // take the mean abundance over last AssessmentPeriod yrs for each species
+     for (area=1; area<=Nareas; area++){
+         for (spp=1; spp<=Nspecies; spp++){
+             maxSpeciesThreshold(area,spp) = Nthresholds; // set all to safe level
+             for (iassess=1; iassess<=AssessmentPeriod; iassess++){
+                 // mean of last few years
+                 est_survey_biomass_assessment(area,spp,yrct) +=  est_survey_biomass(area,spp,yrct-iassess+1)/AssessmentPeriod;
+             }
+             // now check for exceedances
+             for (ithreshold=1; ithreshold<=Nthresholds; ithreshold++) {
+                 if ((est_survey_biomass_assessment(area,spp,yrct)/B0(area,spp)) <= (threshold_proportion(ithreshold)+threshold_species(spp))) {
+                    maxSpeciesThreshold(area,spp) = ithreshold;
+                    // dont need to keep going for this species since we've found the most severe case
+                    break;
+                  }
+
+             }// threshold loop
+             test<<maxSpeciesThreshold(area,spp)<<", ";
+         } // spp  loop
+     } // area loop
+    // test<<endl;
+
+     // now we have checked for exceedences we need to act on them.
+     // calculate the new exploitation rate and then the new value of Effort.
+     // note that if maxThreshold = Nthresholds we revert to max exploitation.
+     // if any species <= threshold minimum exploitation rate.
+     // First find the threshold each guild exeeded and the most severe of all combined
+     for (area=1; area<=Nareas;area++) {
+       int icount = 0;
+        for (iguild=1;iguild<=Nguilds;iguild++) {
+         //test<< maxGuildThreshold(area,iguild)<<endl;
+            if (icount == 0) {
+                 maxThreshold(area) =  maxGuildThreshold(area,iguild);
+            } else {
+                 maxThreshold(area) = min(maxThreshold(area),maxGuildThreshold(area,iguild));
+            }
+             icount++;
+         }
+         if (speciesDetection == 1) { // include species detection level in determining rate change
+          for (spp=1; spp<=Nspecies; spp++){
+             maxThreshold(area) = min(maxThreshold(area),maxSpeciesThreshold(area,spp));
+          }
+         }
+
+     }
+     for (area=1; area<=Nareas; area++){
+         for (iguild=1; iguild<=Nguilds; iguild++) {
+        //      test<<yrct<<","<<maxGuildThreshold(area,iguild) <<","<<maxThreshold(area)<<","<<threshold_proportion(maxThreshold(area))<<","<<exploitation_levels(maxThreshold(area))<<endl;
+         }
+     }
+
+     // now we calculate the new effort for each fleet.//
+     // Note that all fleets are impacted for any guild exceedance. This can and should change
+     for (area=1 ; area<=Nareas ; area++) {
+        for (int ifleet=1;ifleet<=Nfleets;ifleet++){
+         if ( mean_fishery_q(area,ifleet) < 1e-29){ // a fleet doesn't fish a particluar guild. keep effort same
+              // this will only happen at guild q not fleet q.
+              effort_updated(area,ifleet) = obs_effort(area,ifleet,yrct);
+         } else {
+              effort_updated(area,ifleet) = exploitation_levels(maxThreshold(area))/mean_fishery_q(area,ifleet);
+         }
+//         test<<obs_effort(area,ifleet,yrct)<<","<<effort_updated(area,ifleet)<<","<<mean_fishery_q(area,ifleet)<<endl;
+        }
+     }
+     // now effort is used just once in initial.calcs() to obtain the Fyr terms for the whole simulation  so
+     // we need to use this new effort and create updated values for Fyr
+     for (area=1; area<=Nareas ; area++) {
+        for (spp=1; spp<=Nspecies; spp++) {
+            for (int ifleet=1; ifleet<=Nfleets; ifleet++) {
+               for (int iassess=1; iassess <= AssessmentPeriod; iassess++) {
+//                 obs_effort(area,ifleet,yrct+iassess) = value(effort_updated(area,ifleet));
+
+                Fyr(area,spp,ifleet,yrct+iassess) = fishery_q(area,spp,ifleet)*effort_updated(area,ifleet); //Andy Beet
+                }
+//                test<<Fyr(area,spp,ifleet,yrct+1)<<endl;
+            }
+        }
+     }
+
+
+   } //end if yrct
+  }// end if t%
+
+  } //end if assessment on
 
 
 
