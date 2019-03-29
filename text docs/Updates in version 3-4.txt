@@ -1,0 +1,13 @@
+In version 3-3:
+	Updated the objective function componenets for total com/survey catches include a weighting term. 
+	Added a new dat file to read in the catch-at-length data to be used for the objective function
+		File name: JMB_C.dat
+
+In version 3-4:
+	Changed the catch-at-length from total catch-at-length to catch-at-length by fleet
+		Line 563:  New file name: Observed_data_new.dat
+		Line 564:  Adding the total catch by fleet increases to a 5d array
+		Line 804:  Added new parameter: catchcomp_fl_fit to include fleet. 3d array
+		Line 1994: Added fleet loop to allow us to look at the contribution of individual fleets to the ofv
+		Line 2044: Sum fleet-specific catch components to add to the objective function
+		* Fixed the commercial catch-at-length proportions likelihood component
