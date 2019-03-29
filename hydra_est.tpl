@@ -51,7 +51,7 @@ GLOBALS_SECTION
 //  #include <morefun.cxx>
   #include "statsLib.h"
   ofstream simout("simout.csv");
-  ofstream test("test.csv"); // for debugging only
+//  ofstream test("test.csv"); // for debugging only
 
 //=======================================================================================
 DATA_SECTION
